@@ -1,0 +1,3450 @@
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 1 - 1
+
+
+				TITLE 80eF202
+				PAGE 62,132	;62 lines per page, 132 characters per line
+				;===============================================================
+				;       80eF 2.02, C. H. Ting, 02/15/06
+				;	ep8080, recreate 8080 proceesor, based on ep16
+				;	Combine ZEF80 with 86eforth to test 8080 core
+				;	Assembling 80ef202 with ep8080.bat
+				;		c:\masm615\bin\ml /Fl 80EF202.asm >80EF202.err 
+				;		c:\masm615\bin\link 80EF202.obj
+				;	Covert 80ef202.exe to .mem file used inDiammond IDE
+				;		copy 80ef202.exe to \F#\F#MIDI
+				;		Execute COMtoMEM.FEX
+				;		MIDI @ 200 + 160 COMdump
+				;		Copy mem dumo to \ep8080x\ep8080.mem
+				;	Synthesize ram_memory with IPexpress
+				;		Select EBR component/RAMDQ
+				;		Enter file name ram_memoery, VHDL output
+				;		Select 8192 bytes, no output latch
+				;		Select Address Hex type, enter ep8080.mem file
+				;		Select None for Bus Order Type 
+				;	Synthesize ep8080 modules in Diamond IDE
+				;		ep80_chip.vhd
+				;		ep80.vhd
+				;		ram_memory.vhd
+				;		uart80.vhd
+				;		gpio80.vhd
+				;	Select Export Files/VHDL Simulation File and JEDEC file
+				;		Click Process/Run All
+				;	Select Simulation Wizard to simulate
+				;		Select 10 MHz for aclk
+				;		Select 1,0ns,0,200ns for arst
+				;		Run 10ms to see message output on uart_o
+				;	Select Programming to burn FPGA
+				;
+				;
+				;===============================================================
+				;       86eForth 2.02, C. H. Ting, 06/03/99
+				;       A sample session looks like:
+				;	       c>86ef202
+				;	       DOWNLOAD LESSONS.TXT
+				;	       WORDS
+				;	       ' THEORY 'BOOT !
+				;	       UPLOAD TEST.EXE
+				;	       BYE
+				;	       c>test
+				;
+				;       86eForth 2.01, C. H. Ting, 05/24/99
+				;       Merge Zen2.asm with eForth 1.12
+				;1.     Eliminate most of the @EXECUTE thru user variables
+				;2.     Combine name and code dictionary
+				;3.     Eliminate code pointer fields
+				;4.     elimiate catch-throw
+				;5.     eliminate most user variables
+				;6.     extend top memory to FFF0H where the stacks and user area are.
+				;7.     add open, close, read, write; improve BYE
+				;8      add 1+, 1-, 2/
+				;
+				;       
+				;       eForth 1.12, C. H. Ting, 03/30/99
+				;	       Change READ and LOAD to 'read' and 'load'.
+				;	       Make LOAD to read and compile a file.  The file
+				;	       buffer is from CP+1000 to NP-100.
+				;	       To load all the lessons, type:
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 2 - 1
+
+
+				;	       LOAD LESSONS.TXT
+				;	       and you can test all the examples in this file.
+				;       eForth 1.11, C. H. Ting, 03/25/99
+				;	       Change BYE to use function 4CH of INT 21H.
+				;	       Add read, write, open, close, READ, and LOAD
+				;	       To read a text file into memory:
+				;	       HEX 2000 1000 READ TEST.TXT
+				;	       READ returns the number of byte actually read.
+				;	       To compile the source code in the text file:
+				;	       2000 FCD LOAD
+				;	       where FCD is the length returned by READ.
+				;	       These additions allow code for other eForth systems
+				;	       to be tested on PC first.
+				;	       It is part of the Firmware Engineering Workshop.
+				;
+				;
+				;	eForth 1.0 by Bill Muench and C. H. Ting, 1990
+				;	Much of the code is derived from the following sources:
+				;	8086 figForth by Thomas Newman, 1981 and Joe smith, 1983
+				;	aFORTH by John Rible
+				;	bFORTH by Bill Muench
+				;
+				;	The goal of this implementation is to provide a simple eForth Model
+				;	which can be ported easily to many 8, 16, 24 and 32 bit CPU's.
+				;	The following attributes make it suitable for CPU's of the '90:
+				;
+				;	small machine dependent kernel and portable high level code
+				;	source code in the MASM format
+				;	direct threaded code
+				;	separated code and name dictionaries
+				;	simple vectored terminal and file interface to host computer
+				;	aligned with the proposed ANS Forth Standard
+				;	easy upgrade path to optimize for specific CPU
+				;
+				;	You are invited to implement this Model on your favorite CPU and
+				;	contribute it to the eForth Library for public use. You may use
+				;	a portable implementation to advertise more sophisticated and
+				;	optimized version for commercial purposes. However, you are
+				;	expected to implement the Model faithfully. The eForth Working
+				;	Group reserves the right to reject implementation which deviates
+				;	significantly from this Model.
+				;
+				;	As the ANS Forth Standard is still evolving, this Model will
+				;	change accordingly. Implementations must state clearly the
+				;	version number of the Model being tracked.
+				;
+				;	Representing the eForth Working Group in the Silicon Valley FIG Chapter.
+				;	Send contributions to:
+				;
+				;	Dr. C. H. Ting
+				;	156 14th Avenue
+				;	San Mateo, CA 94402
+				;	(650) 571-7639
+				;
+				;===============================================================
+				;; Version control
+ = 0002				VER	     EQU     2	       ;major release version
+ = 0003				EXT	     EQU     3	       ;minor extension
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 3 - 1
+
+
+				;; Constants
+ =-0001				TRUEE	EQU	-1	;true flag
+ = 0040				COMPO	EQU	040H	;lexicon compile only bit
+ = 0080				IMEDD	EQU	080H	;lexicon immediate bit
+ = 7F1F				MASKK	EQU	07F1FH	;lexicon bit mask
+ = 0002				CELLL	EQU	2	;size of a cell
+ = 0010				BASEE	EQU	10H	;default radix
+ = 0008				VOCSS	EQU	8	;depth of vocabulary stack
+ = 0008				BKSPP	EQU	8	;back space
+ = 000A				LF	EQU	10	;line feed
+ = 000D				CRR	EQU	13	;carriage return
+ = 001B				ERR	EQU	27	;error escape
+ = 0027				TIC	EQU	39	;tick
+ = 00CD				CALLL	EQU	0CDH	;NOP CALL opcodes
+				;; Memory allocation
+ = 1FFF				EM	EQU     01FFFH	  ;top of memory
+ = 001E				US	EQU	15*CELLL	;user area size in cells
+ = 0080				RTS	EQU	64*CELLL	;return stack/TIB size
+ = 1FE0				UPP	EQU     1FE0H	 ;start of user area (UP0)
+ = 1F80				RPP	EQU     1F80H	 ;start of return stack (RP0)
+ = 1F90				TIBB	EQU     1F90H	 ;terminal input buffer (TIB)
+ = 0000				SPP	EQU     0H	    ;start of data stack (SP0)
+ = 0000				COLDD	EQU     0	   ;cold start vector
+				;; Initialize assembly variables
+ = 0000				_LINK	= 0	;force a null link
+ = 0000				_USER   = 0	     ;first user variable offset
+				;; Define assembly macros
+				;	Compile a code definition header.
+				$CODE	MACRO	LEX,NAME,LABEL
+					DW      _LINK	    ;;token pointer and link
+					_LINK	= $	;;link points to a name string
+					DB	LEX,NAME	;;name string
+				LABEL:	;;assembly label
+					ENDM
+				;	Compile a colon definition header.
+				$COLON	MACRO	LEX,NAME,LABEL
+					$CODE	LEX,NAME,LABEL
+					DB	CALLL
+					DW	DOLST	;;include CALL doLIST
+					ENDM
+				;	Compile a user variable header.
+				$USER	MACRO	LEX,NAME,LABEL
+					$CODE	LEX,NAME,LABEL
+					DB	CALLL
+					DW	DOLST	;;include CALL doLIST
+					DW	DOUSE,_USER	;;followed by doUSER and offset
+					_USER = _USER+CELLL	;update user area offset
+					ENDM
+				;	Assemble inline direct threaded code ending.
+				$NEXT	MACRO
+					DB	0C3H	\;;read the next code address into AX
+					DW	NextStep	;;jump directly to the code address
+					ENDM
+				;; Main entry points and COLD start data
+ 0000				MAIN	SEGMENT
+					ASSUME	CS:MAIN,DS:MAIN,ES:MAIN,SS:MAIN
+ 0000				ORIG:	
+				; COLD start moves the following to USER variables.
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 4 - 1
+
+
+				; MUST BE IN SAME ORDER AS USER VARIABLES.
+				ORG	COLDD	;beginning of cold boot area
+ 0000  21 80 1F				DB	21h, 080h,1Fh	 ; LD HL, 007Ch ; init RP to 1FFEh
+ 0003  22 FE 1F				DB	22h, 0FEh,1Fh    ; LD (RP), HL ;
+ 0006  C3				DB	0C3H
+ 0007  12E8 R				DW	COLD
+ 0009				UZERO:
+ 0009  0010				DW	BASEE	;BASE
+ 000B  0000				DW	0	;tmp
+ 000D  0000				DW	0	;>IN
+ 000F  000A				DW	10	;#TIB
+ 0011  1F90				DW	TIBB	;TIB
+ 0013  0D93 R				DW	INTER	;'EVAL
+ 0015  0000				DW	0	;HLD
+ 0017  0000				DW	0	;CONTEXT pointer
+ 0019  1307 R				DW	CTOP	;CP
+ 001B  12E3 R				DW      LASTN	;LAST
+ 001D  1F80				DW	1F80H	;RP at 94h
+ 001F  0000				DW	0	;SP
+ 0021				ULAST:
+					  
+				;; Device dependent I/O
+				;       All channeled to DOS 21H services
+				;;ORG	0100H
+ 0021				PUSHDE:	
+ 0021  D5				DB	0D5H
+ 0022				PUSHHL:
+ 0022  E5				DB	0E5H
+				;;   NextStep
+				;The Forth Inner Interpreter--IP (=BC)is pointing the To-Be-Exec one
+ 0023				NextStep: ;The Forth Inner Interpreter--IP (=BC)is pointing the To-Be-Exec one
+ 0023  0A				DB    0Ah	      ;       LD  A, (BC); 7t
+ 0024  03				DB    03h	      ;       INC BC     ; 6t
+ 0025  6F				DB    6Fh	      ;       LD  L, A   ; 4t
+ 0026  0A				DB    0Ah	      ;       LD  A, (BC); 7t
+ 0027  03				DB    03h	      ;       INC BC     ; 6t
+ 0028  67				DB    67h	      ;       LD  H, A   ; 4t
+ 0029  E9				DB   0E9h	      ;       JP  (HL)   ; 4t
+					       ;	  ; 38t==(10MHz)3.8 usec.
+				;   ?RX	( -- c T | F )
+				;	Return input character and true, or a false if no input.
+					$COLON   4,'?KEY',QKEY
+ 002A  0000		     2		DW      _LINK	    
+ 002C
+ 002C  04 3F 4B 45 59	     2		DB	4,'?KEY'	
+ 0031			     2	QKEY:	
+ 0031  CD		     1		DB	CALLL
+ 0032  0081 R		     1		DW	DOLST	
+ 0034  006E R FF02 0126 R		DW      DOLIT,0FF02H,CAT,DUPP   ; UART80 RX C@
+       01A7 R
+ 003C  00C2 R 0048 R			DW      QBRAN,RX1	     
+ 0040  006E R FF03 0126 R		DW      DOLIT,0FF03H,CAT,SWAP	; UART80 RX C!
+       01B4 R
+ 0048				RX1: 
+ 0048  00F1 R				DW	EXIT     ; $1A PC! ;
+				;   TX!	( c -- )
+				;	Send character c to the output device.
+					$COLON  4,'EMIT',EMIT 
+ 004A  002C R		     2		DW      _LINK	    
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 5 - 1
+
+
+ 004C
+ 004C  04 45 4D 49 54	     2		DB	4,'EMIT'	
+ 0051			     2	EMIT:	
+ 0051  CD		     1		DB	CALLL
+ 0052  0081 R		     1		DW	DOLST	
+ 0054				TX1: 
+ 0054  006E R FF01 0126 R		DW      DOLIT,0FF01H,CAT	  ; UART80 TX C@
+ 005A  00C2 R 0054 R			DW      QBRAN,TX1	     ; UNTIL
+ 005E  006E R FF01 011B R		DW      DOLIT,0FF01H,CSTOR,EXIT     ; UART80 TX C! ;
+       00F1 R
+				;; The kernel
+				;   doLIT	( -- w )
+				;	Push an inline literal.
+					$CODE   COMPO+5,'doLit',DOLIT
+ 0066  004C R		     1		DW      _LINK	    
+ 0068
+ 0068  45 64 6F 4C 69 74     1		DB	COMPO+5,'doLit'	
+ 006E			     1	DOLIT:	
+ 006E  0A				DB    0Ah	      ;       LD  A, (BC)  ; 7t
+ 006F  03				DB    03h	      ;       INC BC       ; 6t
+ 0070  6F				DB    6Fh	      ;       LD  L,A      ; 4t
+ 0071  0A				DB    0Ah	      ;       LD  A,(BC)   ; 7t
+ 0072  03				DB    03h	      ;       INC BC       ; 6t
+ 0073  67				DB    67h	      ;       LD  H,A      ; 4t
+ 0074  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 0075  C3				DB   0C3h
+ 0076  0023 R				DW   NextStep	  ;       JP  NextStep ;10t    
+				;   doLIST	( a -- )
+				;	Process colon list.
+					$CODE   COMPO+6,'doList',DOLST
+ 0078  0068 R		     1		DW      _LINK	    
+ 007A
+ 007A  46 64 6F 4C 69 73     1		DB	COMPO+6,'doList'	
+       74
+ 0081			     1	DOLST:	
+ 0081  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP) ;16t
+ 0084  2B				DB    2Bh	      ;       DEC HL       ; 6t
+ 0085  70				DB    70h	      ;       LD  (HL), B  ; 7t      \ end of r-push simulation
+ 0086  2B				DB    2Bh	      ;       DEC HL       ; 6t
+ 0087  71				DB    71h	      ;       LD  (HL), C  ; 7t      \ end of r-push simulation
+ 0088  22 FE 1F				DB    22h, 0FEh,1Fh    ;       LD  (RP), HL ;16t      \ IP is r-pushed (simulated)
+					       ;	    ;
+ 008B  C1				DB   0C1h	      ;       POP BC       ;10t
+ 008C  C3				DB   0C3h
+ 008D  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	      ;99t==9.9usec (+ 2.4usec for NextStep)
+				;   next	( -- )
+				;	Run time code for the single index loop.
+				;	: next ( -- ) \ hilevel model
+				;	  r> r> dup if 1 - >r @ >r exit then drop cell+ >r ;
+					$CODE   COMPO+4,'next',DONXT
+ 008F  007A R		     1		DW      _LINK	    
+ 0091
+ 0091  44 6E 65 78 74	     1		DB	COMPO+4,'next'	
+ 0096			     1	DONXT:	
+ 0096  2A FE 1F				DB   2Ah, 0FEh,1Fh     ;       LD  HL, (RP) ;16t
+ 0099  7E				DB   7Eh	       ;       LD  A, (HL)  ; 7t
+ 009A  B7				DB  0B7h	       ;       OR  A	; 4t
+ 009B  C2				DB  0C2h	 ;       JR  NZ, DECLOW;12/7t a fast dec is ok, only failed every 255 time
+ 009C  00AF R				DW  DECLOW	       ;	    ; low byte 0
+ 009E  23				DB   23h	       ;       INC HL       ; 6t
+ 009F  7E				DB   7Eh	       ;       LD  A, (HL)  ; 7t
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 6 - 1
+
+
+ 00A0  B7				DB  0B7h	       ;       OR  A	; 4t
+ 00A1  C2				DB  0C2h	  ;       JR  NZ, DECHILO;12/7t Hi-byte no-zero, it is also a re-loop case
+ 00A2  00AD R				DW  DECHILOW	       ;zero bound now .. .
+ 00A4  23				DB   23h	       ;       INC HL       ; 6tdiscard the loop count on R-stack
+ 00A5  22 FE 1F				DB   22h, 0FEh,1Fh     ;       LD  (RP), HL ;16t
+ 00A8  03				DB   03h	       ;       INC BC       ; 6t\ IP slip over the re-loop-addr
+ 00A9  03				DB   03h	       ;       INC BC       ; 6t
+ 00AA  C3				DB  0C3h
+ 00AB  0023 R				DW  NextStep	   ;       JP  NextStep ;10t loop is over
+ 00AD				DECHILOW:	       ;	    ; 98t==(10MHz)9.8usec
+ 00AD  35				DB   35h	      ;DECHILO:DEC (HL)     ;11t hi-byte
+ 00AE  2B				DB   2Bh	       ;       DEC HL       ; 6t back to low byte
+ 00AF				DECLOW:
+ 00AF  35				DB   35h	       ;DECLOW:DEC (HL)     ;11t low byte non-zero, just dec it and re-loop
+ 00B0  69				DB   69h	       ;       LD  L, C     ; 4t get loop-start-adr to IP and keep stepping
+ 00B1  60				DB   60h	       ;       LD  H, B     ; 4t
+ 00B2  4E				DB   4Eh	       ;       LD  C, (HL)  ; 7t
+ 00B3  23				DB   23h	       ;       INC HL       ; 6t
+ 00B4  46				DB   46h	       ;       LD  B, (HL)  ; 7t
+ 00B5  C3				DB  0C3h
+ 00B6  0023 R				DW  NextStep	   ;       JP  NextStep ;10t
+					      ; low byte dec:    88t==(10MHz)8.8usec
+					      ; lo&Hi byte dec: 134t==(10MHz)13.4usec
+				;   ?branch	( f -- )
+				;	Branch if flag is zero.
+					$CODE   COMPO+7,'?branch',QBRAN
+ 00B8  0091 R		     1		DW      _LINK	    
+ 00BA
+ 00BA  47 3F 62 72 61 6E     1		DB	COMPO+7,'?branch'	
+       63 68
+ 00C2			     1	QBRAN:	
+ 00C2  E1				DB   0E1h	      ;       POP HL	;10t
+ 00C3  7D				DB    7Dh	      ;       LD  A, L      ; 4t    ?branch adr is just after ?branch
+ 00C4  B4				DB   0B4h	      ;       OR  H	 ; 4t    and IP is pointing it
+ 00C5  CA				DB    0CAh	 ;       JR  Z,ZEROO   ; 12/7t (Z=1,12t)
+ 00C6  00D6 R				DW  BRAN
+ 00C8  03				DB    03h	      ;       INC BC	; 6t    IP slip over the retun addr
+ 00C9  03				DB    03h	      ;       INC BC	; 6t    ex: 'TRUE IF' will slip over
+ 00CA  C3				DB   0C3h
+ 00CB  0023 R				DW   NextStep	  ;       JP  NextStep  ;10t  ;47t==(10MHz)4.7usec
+					       ;
+				;   branch	( -- )
+				;	Branch to an inline address.
+					$CODE   COMPO+6,'branch',BRAN
+ 00CD  00BA R		     1		DW      _LINK	    
+ 00CF
+ 00CF  46 62 72 61 6E 63     1		DB	COMPO+6,'branch'	
+       68
+ 00D6			     1	BRAN:	
+ 00D6  69				DB    69h	      ;       LD  L, C      ; 4t   get IP :=[IP] and go
+ 00D7  60				DB    60h	      ;       LD  H, B      ; 4t
+ 00D8  4E				DB    4Eh	      ;       LD  C, (HL)   ; 7t
+ 00D9  23				DB    23h	      ;       INC HL	; 6t
+ 00DA  46				DB    46h	      ;       LD  B, (HL)   ; 7t
+ 00DB  C3				DB   0C3h
+ 00DC  0023 R				DW   NextStep	  ;       JP  NextStep  ;10t
+					       ;	     ;38t==(10MHz)3.8usec
+				;   EXECUTE	( ca -- )
+				;	Execute the word at ca.
+					$CODE	7,'EXECUTE',EXECU
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 7 - 1
+
+
+ 00DE  00CF R		     1		DW      _LINK	    
+ 00E0
+ 00E0  07 45 58 45 43 55     1		DB	7,'EXECUTE'	
+       54 45
+ 00E8			     1	EXECU:	
+ 00E8  E1				DB   0E1h	      ;       POP HL	;10t
+ 00E9  E9				DB   0E9h	      ;       JP  (HL)      ; 4t
+				;   EXIT	( -- )
+				;	Terminate a colon definition.
+					$CODE	4,'EXIT',EXIT
+ 00EA  00E0 R		     1		DW      _LINK	    
+ 00EC
+ 00EC  04 45 58 49 54	     1		DB	4,'EXIT'	
+ 00F1			     1	EXIT:	
+ 00F1  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP) ;16t
+ 00F4  4E				DB    4Eh	      ;       LD  C, (HL)  ; 7t
+ 00F5  23				DB    23h	      ;       INC HL       ; 6t
+ 00F6  46				DB    46h	      ;       LD  B, (HL)  ; 7t
+ 00F7  23				DB    23h	      ;       INC HL       ; 6t
+ 00F8  22 FE 1F				DB    22h, 0FEh,1Fh    ;       LD  (RP),HL  ;16t
+ 00FB  C3				DB   0C3h
+ 00FC  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;68t==6.8us
+				;   !	( w a -- )
+				;	Pop the data stack to memory.
+					$CODE	1,'!',STORE
+ 00FE  00EC R		     1		DW      _LINK	    
+ 0100
+ 0100  01 21		     1		DB	1,'!'	
+ 0102			     1	STORE:	
+ 0102  E1				DB   0E1h	      ;       POP HL       ;10t
+ 0103  D1				DB   0D1h	      ;       POP DE       ;10t
+ 0104  73				DB    73h	      ;       LD  (HL), E  ; 7t
+ 0105  23				DB    23h	      ;       INC HL       ; 6t
+ 0106  72				DB    72h	      ;       LD  (HL), D  ; 7t
+ 0107  C3				DB   0C3h
+ 0108  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;50t==(10Mhz)5.0 usec
+				;   @	( a -- w )
+				;	Push memory location to the data stack.
+					$CODE	1,'@',AT
+ 010A  0100 R		     1		DW      _LINK	    
+ 010C
+ 010C  01 40		     1		DB	1,'@'	
+ 010E			     1	AT:	
+ 010E  E1				DB   0E1h	      ;       POP HL       ;10t
+ 010F  5E				DB    5Eh	      ;       LD  E, (HL)  ; 7t
+ 0110  23				DB    23h	      ;       INC HL       ; 6t
+ 0111  56				DB    56h	      ;       LD  D, (HL)  ; 7t
+ 0112  D5				DB   0D5h	      ;       PUSH DE      ;11t
+ 0113  C3				DB   0C3h
+ 0114  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;51t==(10Mhz)5.1usec
+				;   C!	( c b -- )
+				;	Pop the data stack to byte memory.
+					$CODE	2,'C!',CSTOR
+ 0116  010C R		     1		DW      _LINK	    
+ 0118
+ 0118  02 43 21		     1		DB	2,'C!'	
+ 011B			     1	CSTOR:	
+ 011B  E1				DB   0E1h	      ;       POP HL	;10t
+ 011C  D1				DB   0D1h	      ;       POP DE	;10t
+ 011D  73				DB    73h	      ;       LD  (HL), E   ; 7t
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 8 - 1
+
+
+ 011E  C3				DB   0C3h
+ 011F  0023 R				DW   NextStep	  ;       JP  NextStep  ;10t
+					       ;	     ;37t==(10Mhz)3.7usec
+				;   C@	( b -- c )
+				;	Push byte memory location to the data stack.
+					$CODE	2,'C@',CAT
+ 0121  0118 R		     1		DW      _LINK	    
+ 0123
+ 0123  02 43 40		     1		DB	2,'C@'	
+ 0126			     1	CAT:	
+ 0126  E1				DB   0E1h	      ;       POP HL       ;10t
+ 0127  5E				DB    5Eh	      ;       LD  E, (HL)  ; 7t
+ 0128  16 00				DB    16h, 00h	 ;       LD  D, 0     ; 7t
+ 012A  D5				DB   0D5h	      ;       PUSH DE      ;11t
+ 012B  C3				DB   0C3h
+ 012C  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;45t==(10Mhz)4.5usec
+				;   R>	( -- w )
+				;	Pop the return stack to the data stack.
+					$CODE	COMPO+2,'R>',RFROM
+ 012E  0123 R		     1		DW      _LINK	    
+ 0130
+ 0130  42 52 3E		     1		DB	COMPO+2,'R>'	
+ 0133			     1	RFROM:	
+ 0133  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP) ;16t
+ 0136  5E				DB    5Eh	      ;       LD  E, (HL)  ; 7t
+ 0137  23				DB    23h	      ;       INC HL       ; 6t
+ 0138  56				DB    56h	      ;       LD  D, (HL)  ; 7t
+ 0139  23				DB    23h	      ;       INC HL       ; 6t
+ 013A  22 FE 1F				DB    22h, 0FEh,1Fh    ;       LD  (RP), HL ;16t
+ 013D  D5				DB   0D5h	      ;       PUSH DE      ;11t
+ 013E  C3				DB   0C3h
+ 013F  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;67t==(10MHz)5.7.usec
+				;   R@	( -- w )
+				;	Copy top of return stack to the data stack.
+					$CODE	2,'R@',RAT
+ 0141  0130 R		     1		DW      _LINK	    
+ 0143
+ 0143  02 52 40		     1		DB	2,'R@'	
+ 0146			     1	RAT:	
+ 0146  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP) ;16t
+ 0149  5E				DB    5Eh	      ;       LD  E, (HL)  ; 7t
+ 014A  23				DB    23h	      ;       INC HL       ; 6t
+ 014B  56				DB    56h	      ;       LD  D, (HL)  ; 7t
+ 014C  D5				DB   0D5h	      ;       PUSH DE      ;11t
+ 014D  C3				DB   0C3h
+ 014E  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;57t==(10MHz)5.7usec
+				;   >R	( w -- )
+				;	Push the data stack to the return stack.
+					$CODE	COMPO+2,'>R',TOR
+ 0150  0143 R		     1		DW      _LINK	    
+ 0152
+ 0152  42 3E 52		     1		DB	COMPO+2,'>R'	
+ 0155			     1	TOR:	
+ 0155  D1				DB   0D1h	      ;       POP DE       ;10t
+ 0156  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP) ;16t
+ 0159  2B				DB    2Bh	      ;       DEC HL       ; 6t
+ 015A  72				DB    72h	      ;       LD  (HL), D  ; 7t
+ 015B  2B				DB    2Bh	      ;       DEC HL       ; 6t
+ 015C  73				DB    73h	      ;       LD  (HL), E  ; 7t
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 9 - 1
+
+
+ 015D  22 FE 1F				DB    22h, 0FEh,1Fh    ;       LD  (RP), HL ;16t
+ 0160  C3				DB   0C3h
+ 0161  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;78t==(10MHz)7.8usec
+				;   RP@	 ( -- a )
+				;	       Push the current RP to the data stack.
+					$CODE   3,'RP@',RPAT
+ 0163  0152 R		     1		DW      _LINK	    
+ 0165
+ 0165  03 52 50 40	     1		DB	3,'RP@'	
+ 0169			     1	RPAT:	
+ 0169  2A FE 1F				DB    2Ah, 0FEh,1Fh    ;       LD  HL, (RP)
+ 016C  E5				DB   0E5h	      ;       PUSH HL
+ 016D  C3				DB   0C3h
+ 016E  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   RP!	 ( a -- )
+				;	       Set the return stack pointer.
+					$CODE   COMPO+3,'RP!',RPSTO
+ 0170  0165 R		     1		DW      _LINK	    
+ 0172
+ 0172  43 52 50 21	     1		DB	COMPO+3,'RP!'	
+ 0176			     1	RPSTO:	
+ 0176  E1				DB   0E1h	      ;       POP HL       ;
+ 0177  22 FE 1F				DB   22h, 0FEh,1Fh    ;       LD  (RP), HL ;
+ 017A  C3				DB   0C3h
+ 017B  0023 R				DW   NextStep	  ;       JP  NextStep ;
+				;   SP@	( -- a )
+				;	Push the current data stack pointer.
+					$CODE   3,'sp@',SPAT
+ 017D  0172 R		     1		DW      _LINK	    
+ 017F
+ 017F  03 73 70 40	     1		DB	3,'sp@'	
+ 0183			     1	SPAT:	
+ 0183  21 00 00				DB    21h, 00h, 00h    ;       LD  HL, 0
+ 0186  39				DB    39h	      ;       ADD HL, SP
+ 0187  E5				DB   0E5h	      ;       PUSH HL
+ 0188  C3				DB   0C3h
+ 0189  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   SP!	( a -- )
+				;	Set the data stack pointer.
+					$CODE   3,'sp!',SPSTO
+ 018B  017F R		     1		DW      _LINK	    
+ 018D
+ 018D  03 73 70 21	     1		DB	3,'sp!'	
+ 0191			     1	SPSTO:	
+ 0191  E1				DB   0E1h	      ;       POP HL
+ 0192  F9				DB   0F9h	      ;       LD  SP, HL
+ 0193  C3				DB   0C3h
+ 0194  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   DROP	( w -- )
+				;	Discard top stack item.
+					$CODE	4,'DROP',DROP
+ 0196  018D R		     1		DW      _LINK	    
+ 0198
+ 0198  04 44 52 4F 50	     1		DB	4,'DROP'	
+ 019D			     1	DROP:	
+ 019D  E1				DB   0E1h	      ;       POP HL       ;10t
+ 019E  C3				DB   0C3h
+ 019F  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;20t==(10MHz)2.0usec
+				;   DUP	( w -- w w )
+				;	Duplicate the top stack item.
+					$CODE	3,'DUP',DUPP
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 10 - 1
+
+
+ 01A1  0198 R		     1		DW      _LINK	    
+ 01A3
+ 01A3  03 44 55 50	     1		DB	3,'DUP'	
+ 01A7			     1	DUPP:	
+ 01A7  E1				DB   0E1h	      ;       POP HL       ;10t
+ 01A8  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 01A9  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 01AA  C3				DB   0C3h
+ 01AB  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;42t==(10MHz)4.2usec
+				;   SWAP	( w1 w2 -- w2 w1 )
+				;	Exchange top two stack items.
+					$CODE	4,'SWAP',SWAP
+ 01AD  01A3 R		     1		DW      _LINK	    
+ 01AF
+ 01AF  04 53 57 41 50	     1		DB	4,'SWAP'	
+ 01B4			     1	SWAP:	
+ 01B4  E1				DB   0E1h	      ;       POP HL       ;10t
+ 01B5  E3				DB   0E3h	      ;       EX  (SP), HL ;19t
+ 01B6  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 01B7  C3				DB   0C3h
+ 01B8  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;50t==(10MHz)5.0usec
+				;   OVER	( w1 w2 -- w1 w2 w1 )
+				;	Copy second stack item to top.
+					$CODE	4,'OVER',OVER
+ 01BA  01AF R		     1		DW      _LINK	    
+ 01BC
+ 01BC  04 4F 56 45 52	     1		DB	4,'OVER'	
+ 01C1			     1	OVER:	
+ 01C1  D1				DB   0D1h	      ;       POP DE       ;10t
+ 01C2  E1				DB   0E1h	      ;       POP HL       ;10t
+ 01C3  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 01C4  D5				DB   0D5h	      ;       PUSH DE      ;11t
+ 01C5  E5				DB   0E5h	      ;       PUSH HL      ;11t
+ 01C6  C3				DB   0C3h
+ 01C7  0023 R				DW   NextStep	  ;       JP  NextStep ;10t
+					       ;	    ;63t==(10MHz)6.3usec
+				;   0<	( n -- t )
+				;	Return true if n is negative.
+					$CODE	2,'0<',ZLESS
+ 01C9  01BC R		     1		DW      _LINK	    
+ 01CB
+ 01CB  02 30 3C		     1		DB	2,'0<'	
+ 01CE			     1	ZLESS:	
+ 01CE  E1				DB   0E1h	      ;       POP HL	 ;10t
+ 01CF  29				DB    29h	      ;       ADD HL, HL     ;11t
+ 01D0  DA				DB   0DAh	 ;       JR  C, LESSZ   ;12/7t
+ 01D1  01D9 R				DW  LESSZ
+ 01D3  21 00 00				DB    21h, 00h, 00h    ;       LD  HL, 0      ;10t
+ 01D6  C3				DB   0C3h
+ 01D7  0022 R				DW   PUSHHL	  ;       JP  NextStep   ;10t   59t==(10MHz)5.9usec
+ 01D9				LESSZ:	       ;
+ 01D9  21 FF FF				DB    21h,0FFh,0FFh    ;LESSZ: LD  HL, 0FFFFH ;10t
+ 01DC  C3				DB   0C3h
+ 01DD  0022 R				DW   PUSHHL	 ;       JP  NextStep   ;10t   64t==(10MHz)6.4usec
+				;   AND	( w w -- w )
+				;	Bitwise AND.
+					$CODE	3,'AND',ANDD
+ 01DF  01CB R		     1		DW      _LINK	    
+ 01E1
+ 01E1  03 41 4E 44	     1		DB	3,'AND'	
+ 01E5			     1	ANDD:	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 11 - 1
+
+
+ 01E5  D1				DB   0D1h	      ;       POP DE
+ 01E6  E1				DB   0E1h	      ;       POP HL
+ 01E7  7B				DB    7Bh	      ;       LD  A, E
+ 01E8  A5				DB   0A5h	      ;       AND L
+ 01E9  6F				DB    6Fh	      ;       LD  L, A
+ 01EA  7A				DB    7Ah	      ;       LD  A, D
+ 01EB  A4				DB   0A4h	      ;       AND H
+ 01EC  67				DB    67h	      ;       LD  H, A
+ 01ED  E5				DB   0E5h	      ;       PUSH HL
+ 01EE  C3				DB   0C3h
+ 01EF  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   OR	( w w -- w )
+				;	Bitwise inclusive OR.
+					$CODE	2,'OR',ORR
+ 01F1  01E1 R		     1		DW      _LINK	    
+ 01F3
+ 01F3  02 4F 52		     1		DB	2,'OR'	
+ 01F6			     1	ORR:	
+ 01F6  D1				DB   0D1h	      ;       POP DE
+ 01F7  E1				DB   0E1h	      ;       POP HL
+ 01F8  7B				DB    7Bh	      ;       LD  A, E
+ 01F9  B5				DB   0B5h	      ;       OR  L
+ 01FA  6F				DB    6Fh	      ;       LD  L, A
+ 01FB  7A				DB    7Ah	      ;       LD  A, D
+ 01FC  B4				DB   0B4h	      ;       OR  H
+ 01FD  67				DB    67h	      ;       LD  H, A
+ 01FE  E5				DB   0E5h	      ;       PUSH HL
+ 01FF  C3				DB   0C3h
+ 0200  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   XOR	( w w -- w )
+				;	Bitwise exclusive OR.
+					$CODE	3,'XOR',XORR
+ 0202  01F3 R		     1		DW      _LINK	    
+ 0204
+ 0204  03 58 4F 52	     1		DB	3,'XOR'	
+ 0208			     1	XORR:	
+ 0208  D1				DB   0D1h	      ;       POP DE
+ 0209  E1				DB   0E1h	      ;       POP HL
+ 020A  7B				DB    7Bh	      ;       LD  A, E
+ 020B  AD				DB   0ADh	      ;       XOR L
+ 020C  6F				DB    6Fh	      ;       LD  L, A
+ 020D  7A				DB    7Ah	      ;       LD  A, D
+ 020E  AC				DB   0ACh	      ;       XOR H
+ 020F  67				DB    67h	      ;       LD  H, A
+ 0210  E5				DB   0E5h	      ;       PUSH HL
+ 0211  C3				DB   0C3h
+ 0212  0023 R				DW   NextStep	  ;       JP  NextStep
+				;   UM+	( u u -- udsum )
+				;	Add two unsigned single numbers and return a double sum.
+					$CODE   3,'UM+',UPLUS
+ 0214  0204 R		     1		DW      _LINK	    
+ 0216
+ 0216  03 55 4D 2B	     1		DB	3,'UM+'	
+ 021A			     1	UPLUS:	
+ 021A  D1				DB   0D1h	      ;       POP DE	 ;10t
+ 021B  E1				DB   0E1h	      ;       POP HL	 ;10t
+ 021C  19				DB    19h	      ;       ADD HL, DE     ;11t
+ 021D  E5				DB   0E5h	      ;       PUSH HL	;11t
+ 021E  DA				DB    0DAh	 ;       JR  C, CARRY   ;12/7t
+ 021F  0228 R				DW   CARRY
+ 0221  21 00 00				DB    21h, 00h, 00h    ;       LD  HL, 0      ;10t
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 12 - 1
+
+
+ 0224  E5				DB   0E5h	      ;       PUSH HL	;11t
+ 0225  C3				DB   0C3h
+ 0226  0023 R				DW   NextStep	  ;       JP  NextStep   ;10t
+ 0228				CARRY:	       ;
+ 0228  21 01 00				DB    21h, 01h, 00h    ;CARRY: LD  HL, 1      ;10t
+ 022B  E5				DB   0E5h	      ;       PUSH HL	;11t
+ 022C  C3				DB   0C3h
+ 022D  0023 R				DW   NextStep	  ;       JP  NextStep   ;10t
+				;; System and user variables
+				;   doVAR	( -- a )
+				;	Run time routine for VARIABLE and CREATE.
+					$COLON  COMPO+5,'doVar',DOVAR
+ 022F  0216 R		     2		DW      _LINK	    
+ 0231
+ 0231  45 64 6F 56 61 72     2		DB	COMPO+5,'doVar'	
+ 0237			     2	DOVAR:	
+ 0237  CD		     1		DB	CALLL
+ 0238  0081 R		     1		DW	DOLST	
+ 023A  0133 R 00F1 R			DW	RFROM,EXIT
+				;   UP	( -- a )
+				;	Pointer to the user area.
+					$COLON  2,'up',UP
+ 023E  0231 R		     2		DW      _LINK	    
+ 0240
+ 0240  02 75 70		     2		DB	2,'up'	
+ 0243			     2	UP:	
+ 0243  CD		     1		DB	CALLL
+ 0244  0081 R		     1		DW	DOLST	
+ 0246  0237 R				DW	DOVAR
+ 0248  1FE0				DW	UPP
+				;   doUSER	( -- a )
+				;	Run time routine for user variables.
+					$COLON  COMPO+6,'doUser',DOUSE
+ 024A  0240 R		     2		DW      _LINK	    
+ 024C
+ 024C  46 64 6F 55 73 65     2		DB	COMPO+6,'doUser'	
+       72
+ 0253			     2	DOUSE:	
+ 0253  CD		     1		DB	CALLL
+ 0254  0081 R		     1		DW	DOLST	
+ 0256  0133 R 010E R 0243 R		DW	RFROM,AT,UP,AT,PLUS,EXIT
+       010E R 032B R 00F1 R
+				;   BASE	( -- a )
+				;	Storage of the radix base for numeric I/O.
+					$USER	4,'BASE',BASE
+ 0262  024C R		     2		DW      _LINK	    
+ 0264
+ 0264  04 42 41 53 45	     2		DB	4,'BASE'	
+ 0269			     2	BASE:	
+ 0269  CD		     1		DB	CALLL
+ 026A  0081 R		     1		DW	DOLST	
+ 026C  0253 R 0000	     1		DW	DOUSE,_USER	
+				;   tmp	( -- a )
+				;	A temporary storage location used in parse and find.
+					$USER   COMPO+3,'tmp',TEMP
+ 0270  0264 R		     2		DW      _LINK	    
+ 0272
+ 0272  43 74 6D 70	     2		DB	COMPO+3,'tmp'	
+ 0276			     2	TEMP:	
+ 0276  CD		     1		DB	CALLL
+ 0277  0081 R		     1		DW	DOLST	
+ 0279  0253 R 0002	     1		DW	DOUSE,_USER	
+				;   >IN	( -- a )
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 13 - 1
+
+
+				;	Hold the character pointer while parsing input stream.
+					$USER	3,'>IN',INN
+ 027D  0272 R		     2		DW      _LINK	    
+ 027F
+ 027F  03 3E 49 4E	     2		DB	3,'>IN'	
+ 0283			     2	INN:	
+ 0283  CD		     1		DB	CALLL
+ 0284  0081 R		     1		DW	DOLST	
+ 0286  0253 R 0004	     1		DW	DOUSE,_USER	
+				;   #TIB	( -- a )
+				;	Hold the current count in and address of the terminal input buffer.
+					$USER	4,'#TIB',NTIB
+ 028A  027F R		     2		DW      _LINK	    
+ 028C
+ 028C  04 23 54 49 42	     2		DB	4,'#TIB'	
+ 0291			     2	NTIB:	
+ 0291  CD		     1		DB	CALLL
+ 0292  0081 R		     1		DW	DOLST	
+ 0294  0253 R 0006	     1		DW	DOUSE,_USER	
+ = 000A					_USER = _USER+CELLL	;hold the base address of the terminal input buffer
+				;   'EVAL	( -- a )
+				;	Execution vector of EVAL.
+					$USER   5,"'eval",TEVAL
+ 0298  028C R		     2		DW      _LINK	    
+ 029A
+ 029A  05 27 65 76 61 6C     2		DB	5,"'eval"	
+ 02A0			     2	TEVAL:	
+ 02A0  CD		     1		DB	CALLL
+ 02A1  0081 R		     1		DW	DOLST	
+ 02A3  0253 R 000A	     1		DW	DOUSE,_USER	
+				;   HLD	( -- a )
+				;	Hold a pointer in building a numeric output string.
+					$USER   3,'hld',HLD
+ 02A7  029A R		     2		DW      _LINK	    
+ 02A9
+ 02A9  03 68 6C 64	     2		DB	3,'hld'	
+ 02AD			     2	HLD:	
+ 02AD  CD		     1		DB	CALLL
+ 02AE  0081 R		     1		DW	DOLST	
+ 02B0  0253 R 000C	     1		DW	DOUSE,_USER	
+				;   CONTEXT	( -- a )
+				;	A area to specify vocabulary search order.
+					$USER   7,'CONTEXT',CNTXT
+ 02B4  02A9 R		     2		DW      _LINK	    
+ 02B6
+ 02B6  07 43 4F 4E 54 45     2		DB	7,'CONTEXT'	
+       58 54
+ 02BE			     2	CNTXT:	
+ 02BE  CD		     1		DB	CALLL
+ 02BF  0081 R		     1		DW	DOLST	
+ 02C1  0253 R 000E	     1		DW	DOUSE,_USER	
+				;   CP	( -- a )
+				;	Point to the top of the code dictionary.
+					$USER   2,'cp',CP
+ 02C5  02B6 R		     2		DW      _LINK	    
+ 02C7
+ 02C7  02 63 70		     2		DB	2,'cp'	
+ 02CA			     2	CP:	
+ 02CA  CD		     1		DB	CALLL
+ 02CB  0081 R		     1		DW	DOLST	
+ 02CD  0253 R 0010	     1		DW	DOUSE,_USER	
+				;   LAST	( -- a )
+				;	Point to the last name in the name dictionary.
+					$USER   4,'last',LAST
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 14 - 1
+
+
+ 02D1  02C7 R		     2		DW      _LINK	    
+ 02D3
+ 02D3  04 6C 61 73 74	     2		DB	4,'last'	
+ 02D8			     2	LAST:	
+ 02D8  CD		     1		DB	CALLL
+ 02D9  0081 R		     1		DW	DOLST	
+ 02DB  0253 R 0012	     1		DW	DOUSE,_USER	
+				;; Common functions
+				;   ?DUP	( w -- w w | 0 )
+				;	Dup tos if its is not zero.
+					$COLON	4,'?DUP',QDUP
+ 02DF  02D3 R		     2		DW      _LINK	    
+ 02E1
+ 02E1  04 3F 44 55 50	     2		DB	4,'?DUP'	
+ 02E6			     2	QDUP:	
+ 02E6  CD		     1		DB	CALLL
+ 02E7  0081 R		     1		DW	DOLST	
+ 02E9  01A7 R				DW	DUPP
+ 02EB  00C2 R 02F1 R			DW	QBRAN,QDUP1
+ 02EF  01A7 R				DW	DUPP
+ 02F1				QDUP1:
+ 02F1  00F1 R				DW	EXIT
+				;   ROT	( w1 w2 w3 -- w2 w3 w1 )
+				;	Rot 3rd item to top.
+					$COLON	3,'ROT',ROT
+ 02F3  02E1 R		     2		DW      _LINK	    
+ 02F5
+ 02F5  03 52 4F 54	     2		DB	3,'ROT'	
+ 02F9			     2	ROT:	
+ 02F9  CD		     1		DB	CALLL
+ 02FA  0081 R		     1		DW	DOLST	
+ 02FC  0155 R 01B4 R 0133 R		DW	TOR,SWAP,RFROM,SWAP,EXIT
+       01B4 R 00F1 R
+				;   2DROP	( w w -- )
+				;	Discard two items on stack.
+					$COLON	5,'2DROP',DDROP
+ 0306  02F5 R		     2		DW      _LINK	    
+ 0308
+ 0308  05 32 44 52 4F 50     2		DB	5,'2DROP'	
+ 030E			     2	DDROP:	
+ 030E  CD		     1		DB	CALLL
+ 030F  0081 R		     1		DW	DOLST	
+ 0311  019D R 019D R 00F1 R		DW	DROP,DROP,EXIT
+				;   2DUP	( w1 w2 -- w1 w2 w1 w2 )
+				;	Duplicate top two items.
+					$COLON	4,'2DUP',DDUP
+ 0317  0308 R		     2		DW      _LINK	    
+ 0319
+ 0319  04 32 44 55 50	     2		DB	4,'2DUP'	
+ 031E			     2	DDUP:	
+ 031E  CD		     1		DB	CALLL
+ 031F  0081 R		     1		DW	DOLST	
+ 0321  01C1 R 01C1 R 00F1 R		DW	OVER,OVER,EXIT
+				;   +	( w w -- sum )
+				;	Add top two items.
+					$COLON	1,'+',PLUS
+ 0327  0319 R		     2		DW      _LINK	    
+ 0329
+ 0329  01 2B		     2		DB	1,'+'	
+ 032B			     2	PLUS:	
+ 032B  CD		     1		DB	CALLL
+ 032C  0081 R		     1		DW	DOLST	
+ 032E  021A R 019D R 00F1 R		DW	UPLUS,DROP,EXIT
+				;   NOT	( w -- w )
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 15 - 1
+
+
+				;	One's complement of tos.
+					$COLON	3,'NOT',INVER
+ 0334  0329 R		     2		DW      _LINK	    
+ 0336
+ 0336  03 4E 4F 54	     2		DB	3,'NOT'	
+ 033A			     2	INVER:	
+ 033A  CD		     1		DB	CALLL
+ 033B  0081 R		     1		DW	DOLST	
+ 033D  006E R FFFF 0208 R		DW	DOLIT,-1,XORR,EXIT
+       00F1 R
+				;   NEGATE	( n -- -n )
+				;	Two's complement of tos.
+					$COLON	6,'NEGATE',NEGAT
+ 0345  0336 R		     2		DW      _LINK	    
+ 0347
+ 0347  06 4E 45 47 41 54     2		DB	6,'NEGATE'	
+       45
+ 034E			     2	NEGAT:	
+ 034E  CD		     1		DB	CALLL
+ 034F  0081 R		     1		DW	DOLST	
+ 0351  033A R 05E2 R 00F1 R		DW      INVER,ONEP,EXIT
+				;   DNEGATE	( d -- -d )
+				;	Two's complement of top double.
+					$COLON	7,'DNEGATE',DNEGA
+ 0357  0347 R		     2		DW      _LINK	    
+ 0359
+ 0359  07 44 4E 45 47 41     2		DB	7,'DNEGATE'	
+       54 45
+ 0361			     2	DNEGA:	
+ 0361  CD		     1		DB	CALLL
+ 0362  0081 R		     1		DW	DOLST	
+ 0364  033A R 0155 R 033A R		DW	INVER,TOR,INVER
+ 036A  006E R 0001 021A R		DW	DOLIT,1,UPLUS
+ 0370  0133 R 032B R 00F1 R		DW	RFROM,PLUS,EXIT
+				;   -	( n1 n2 -- n1-n2 )
+				;	Subtraction.
+					$COLON	1,'-',SUBBB
+ 0376  0359 R		     2		DW      _LINK	    
+ 0378
+ 0378  01 2D		     2		DB	1,'-'	
+ 037A			     2	SUBBB:	
+ 037A  CD		     1		DB	CALLL
+ 037B  0081 R		     1		DW	DOLST	
+ 037D  034E R 032B R 00F1 R		DW	NEGAT,PLUS,EXIT
+				;   ABS	( n -- n )
+				;	Return the absolute value of n.
+					$COLON	3,'ABS',ABSS
+ 0383  0378 R		     2		DW      _LINK	    
+ 0385
+ 0385  03 41 42 53	     2		DB	3,'ABS'	
+ 0389			     2	ABSS:	
+ 0389  CD		     1		DB	CALLL
+ 038A  0081 R		     1		DW	DOLST	
+ 038C  01A7 R 01CE R			DW	DUPP,ZLESS
+ 0390  00C2 R 0396 R			DW	QBRAN,ABS1
+ 0394  034E R				DW	NEGAT
+ 0396				ABS1:
+ 0396  00F1 R				DW	EXIT
+				;   =	( w w -- t )
+				;	Return true if top two are equal.
+					$COLON	1,'=',EQUAL
+ 0398  0385 R		     2		DW      _LINK	    
+ 039A
+ 039A  01 3D		     2		DB	1,'='	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 16 - 1
+
+
+ 039C			     2	EQUAL:	
+ 039C  CD		     1		DB	CALLL
+ 039D  0081 R		     1		DW	DOLST	
+ 039F  0208 R				DW	XORR
+ 03A1  00C2 R 03AB R			DW	QBRAN,EQU1
+ 03A5  006E R 0000 00F1 R		DW	DOLIT,0,EXIT
+ 03AB				EQU1:
+ 03AB  006E R FFFF 00F1 R		DW	DOLIT,TRUEE,EXIT
+				;   U<	( u u -- t )
+				;	Unsigned compare of top two items.
+					$COLON	2,'U<',ULESS
+ 03B1  039A R		     2		DW      _LINK	    
+ 03B3
+ 03B3  02 55 3C		     2		DB	2,'U<'	
+ 03B6			     2	ULESS:	
+ 03B6  CD		     1		DB	CALLL
+ 03B7  0081 R		     1		DW	DOLST	
+ 03B9  031E R 0208 R 01CE R		DW	DDUP,XORR,ZLESS
+ 03BF  00C2 R 03CB R			DW	QBRAN,ULES1
+ 03C3  01B4 R 019D R 01CE R		DW	SWAP,DROP,ZLESS,EXIT
+       00F1 R
+ 03CB				ULES1:
+ 03CB  037A R 01CE R 00F1 R		DW	SUBBB,ZLESS,EXIT
+				;   <	( n1 n2 -- t )
+				;	Signed compare of top two items.
+					$COLON	1,'<',LESS
+ 03D1  03B3 R		     2		DW      _LINK	    
+ 03D3
+ 03D3  01 3C		     2		DB	1,'<'	
+ 03D5			     2	LESS:	
+ 03D5  CD		     1		DB	CALLL
+ 03D6  0081 R		     1		DW	DOLST	
+ 03D8  031E R 0208 R 01CE R		DW	DDUP,XORR,ZLESS
+ 03DE  00C2 R 03E8 R			DW	QBRAN,LESS1
+ 03E2  019D R 01CE R 00F1 R		DW	DROP,ZLESS,EXIT
+ 03E8				LESS1:
+ 03E8  037A R 01CE R 00F1 R		DW	SUBBB,ZLESS,EXIT
+				;   MAX	( n n -- n )
+				;	Return the greater of two top stack items.
+					$COLON	3,'MAX',MAX
+ 03EE  03D3 R		     2		DW      _LINK	    
+ 03F0
+ 03F0  03 4D 41 58	     2		DB	3,'MAX'	
+ 03F4			     2	MAX:	
+ 03F4  CD		     1		DB	CALLL
+ 03F5  0081 R		     1		DW	DOLST	
+ 03F7  031E R 03D5 R			DW	DDUP,LESS
+ 03FB  00C2 R 0401 R			DW	QBRAN,MAX1
+ 03FF  01B4 R				DW	SWAP
+ 0401				MAX1:
+ 0401  019D R 00F1 R			DW	DROP,EXIT
+				;   MIN	( n n -- n )
+				;	Return the smaller of top two stack items.
+					$COLON	3,'MIN',MIN
+ 0405  03F0 R		     2		DW      _LINK	    
+ 0407
+ 0407  03 4D 49 4E	     2		DB	3,'MIN'	
+ 040B			     2	MIN:	
+ 040B  CD		     1		DB	CALLL
+ 040C  0081 R		     1		DW	DOLST	
+ 040E  031E R 01B4 R 03D5 R		DW	DDUP,SWAP,LESS
+ 0414  00C2 R 041A R			DW	QBRAN,MIN1
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 17 - 1
+
+
+ 0418  01B4 R				DW	SWAP
+ 041A				MIN1:
+ 041A  019D R 00F1 R			DW	DROP,EXIT
+				;   WITHIN	( u ul uh -- t )
+				;	Return true if u is within the range of ul and uh. ( ul <= u < uh )
+					$COLON	6,'WITHIN',WITHI
+ 041E  0407 R		     2		DW      _LINK	    
+ 0420
+ 0420  06 57 49 54 48 49     2		DB	6,'WITHIN'	
+       4E
+ 0427			     2	WITHI:	
+ 0427  CD		     1		DB	CALLL
+ 0428  0081 R		     1		DW	DOLST	
+ 042A  01C1 R 037A R 0155 R		DW	OVER,SUBBB,TOR
+ 0430  037A R 0133 R 03B6 R		DW	SUBBB,RFROM,ULESS,EXIT
+       00F1 R
+				;; Divide
+				;   UM/MOD	( udl udh un -- ur uq )
+				;	Unsigned divide of a double by a single. Return mod and quotient.
+					$COLON	6,'UM/MOD',UMMOD
+ 0438  0420 R		     2		DW      _LINK	    
+ 043A
+ 043A  06 55 4D 2F 4D 4F     2		DB	6,'UM/MOD'	
+       44
+ 0441			     2	UMMOD:	
+ 0441  CD		     1		DB	CALLL
+ 0442  0081 R		     1		DW	DOLST	
+ 0444  031E R 03B6 R			DW	DDUP,ULESS
+ 0448  00C2 R 0494 R			DW	QBRAN,UMM4
+ 044C  034E R 006E R 000F		DW	NEGAT,DOLIT,15,TOR
+       0155 R
+ 0454				UMM1:
+ 0454  0155 R 01A7 R 021A R		DW	TOR,DUPP,UPLUS
+ 045A  0155 R 0155 R 01A7 R		DW	TOR,TOR,DUPP,UPLUS
+       021A R
+ 0462  0133 R 032B R 01A7 R		DW	RFROM,PLUS,DUPP
+ 0468  0133 R 0146 R 01B4 R		DW	RFROM,RAT,SWAP,TOR
+       0155 R
+ 0470  021A R 0133 R 01F6 R		DW	UPLUS,RFROM,ORR
+ 0476  00C2 R 0486 R			DW	QBRAN,UMM2
+ 047A  0155 R 019D R 05E2 R		DW      TOR,DROP,ONEP,RFROM
+       0133 R
+ 0482  00D6 R 0488 R			DW	BRAN,UMM3
+ 0486				UMM2:
+ 0486  019D R				DW	DROP
+ 0488				UMM3:
+ 0488  0133 R				DW	RFROM
+ 048A  0096 R 0454 R			DW	DONXT,UMM1
+ 048E  019D R 01B4 R 00F1 R		DW	DROP,SWAP,EXIT
+ 0494				UMM4:
+ 0494  019D R 030E R			DW	DROP,DDROP
+ 0498  006E R FFFF 01A7 R		DW	DOLIT,-1,DUPP,EXIT
+       00F1 R
+				;   M/MOD	( d n -- r q )
+				;	Signed floored divide of double by single. Return mod and quotient.
+					$COLON	5,'M/MOD',MSMOD
+ 04A0  043A R		     2		DW      _LINK	    
+ 04A2
+ 04A2  05 4D 2F 4D 4F 44     2		DB	5,'M/MOD'	
+ 04A8			     2	MSMOD:	
+ 04A8  CD		     1		DB	CALLL
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 18 - 1
+
+
+ 04A9  0081 R		     1		DW	DOLST	
+ 04AB  01A7 R 01CE R 01A7 R		DW	DUPP,ZLESS,DUPP,TOR
+       0155 R
+ 04B3  00C2 R 04BF R			DW	QBRAN,MMOD1
+ 04B7  034E R 0155 R 0361 R		DW	NEGAT,TOR,DNEGA,RFROM
+       0133 R
+ 04BF				MMOD1:
+ 04BF  0155 R 01A7 R 01CE R		DW	TOR,DUPP,ZLESS
+ 04C5  00C2 R 04CD R			DW	QBRAN,MMOD2
+ 04C9  0146 R 032B R			DW	RAT,PLUS
+ 04CD				MMOD2:
+ 04CD  0133 R 0441 R 0133 R		DW	RFROM,UMMOD,RFROM
+ 04D3  00C2 R 04DD R			DW	QBRAN,MMOD3
+ 04D7  01B4 R 034E R 01B4 R		DW	SWAP,NEGAT,SWAP
+ 04DD				MMOD3:
+ 04DD  00F1 R				DW	EXIT
+				;   /MOD	( n n -- r q )
+				;	Signed divide. Return mod and quotient.
+					$COLON	4,'/MOD',SLMOD
+ 04DF  04A2 R		     2		DW      _LINK	    
+ 04E1
+ 04E1  04 2F 4D 4F 44	     2		DB	4,'/MOD'	
+ 04E6			     2	SLMOD:	
+ 04E6  CD		     1		DB	CALLL
+ 04E7  0081 R		     1		DW	DOLST	
+ 04E9  01C1 R 01CE R 01B4 R		DW	OVER,ZLESS,SWAP,MSMOD,EXIT
+       04A8 R 00F1 R
+				;   MOD	( n n -- r )
+				;	Signed divide. Return mod only.
+					$COLON	3,'MOD',MODD
+ 04F3  04E1 R		     2		DW      _LINK	    
+ 04F5
+ 04F5  03 4D 4F 44	     2		DB	3,'MOD'	
+ 04F9			     2	MODD:	
+ 04F9  CD		     1		DB	CALLL
+ 04FA  0081 R		     1		DW	DOLST	
+ 04FC  04E6 R 019D R 00F1 R		DW	SLMOD,DROP,EXIT
+				;   /	( n n -- q )
+				;	Signed divide. Return quotient only.
+					$COLON	1,'/',SLASH
+ 0502  04F5 R		     2		DW      _LINK	    
+ 0504
+ 0504  01 2F		     2		DB	1,'/'	
+ 0506			     2	SLASH:	
+ 0506  CD		     1		DB	CALLL
+ 0507  0081 R		     1		DW	DOLST	
+ 0509  04E6 R 01B4 R 019D R		DW	SLMOD,SWAP,DROP,EXIT
+       00F1 R
+				;; Multiply
+				;   UM*	( u u -- ud )
+				;	Unsigned multiply. Return double product.
+					$COLON	3,'UM*',UMSTA
+ 0511  0504 R		     2		DW      _LINK	    
+ 0513
+ 0513  03 55 4D 2A	     2		DB	3,'UM*'	
+ 0517			     2	UMSTA:	
+ 0517  CD		     1		DB	CALLL
+ 0518  0081 R		     1		DW	DOLST	
+ 051A  006E R 0000 01B4 R		DW	DOLIT,0,SWAP,DOLIT,15,TOR
+       006E R 000F 0155 R
+ 0526				UMST1:
+ 0526  01A7 R 021A R 0155 R		DW	DUPP,UPLUS,TOR,TOR
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 19 - 1
+
+
+       0155 R
+ 052E  01A7 R 021A R 0133 R		DW	DUPP,UPLUS,RFROM,PLUS,RFROM
+       032B R 0133 R
+ 0538  00C2 R 0546 R			DW	QBRAN,UMST2
+					
+ 053C  0155 R 01C1 R 021A R		DW	TOR,OVER,UPLUS,RFROM,PLUS
+       0133 R 032B R
+ 0546				UMST2:
+ 0546  0096 R 0526 R			DW	DONXT,UMST1
+ 054A  02F9 R 019D R 00F1 R		DW	ROT,DROP,EXIT
+				;   *	( n n -- n )
+				;	Signed multiply. Return single product.
+					$COLON	1,'*',STAR
+ 0550  0513 R		     2		DW      _LINK	    
+ 0552
+ 0552  01 2A		     2		DB	1,'*'	
+ 0554			     2	STAR:	
+ 0554  CD		     1		DB	CALLL
+ 0555  0081 R		     1		DW	DOLST	
+ 0557  0517 R 019D R 00F1 R		DW	UMSTA,DROP,EXIT
+				;   M*	( n n -- d )
+				;	Signed multiply. Return double product.
+					$COLON	2,'M*',MSTAR
+ 055D  0552 R		     2		DW      _LINK	    
+ 055F
+ 055F  02 4D 2A		     2		DB	2,'M*'	
+ 0562			     2	MSTAR:	
+ 0562  CD		     1		DB	CALLL
+ 0563  0081 R		     1		DW	DOLST	
+ 0565  031E R 0208 R 01CE R		DW	DDUP,XORR,ZLESS,TOR
+       0155 R
+ 056D  0389 R 01B4 R 0389 R		DW	ABSS,SWAP,ABSS,UMSTA
+       0517 R
+ 0575  0133 R				DW	RFROM
+ 0577  00C2 R 057D R			DW	QBRAN,MSTA1
+ 057B  0361 R				DW	DNEGA
+ 057D				MSTA1:
+ 057D  00F1 R				DW	EXIT
+				;   */MOD	( n1 n2 n3 -- r q )
+				;	Multiply n1 and n2, then divide by n3. Return mod and quotient.
+					$COLON	5,'*/MOD',SSMOD
+ 057F  055F R		     2		DW      _LINK	    
+ 0581
+ 0581  05 2A 2F 4D 4F 44     2		DB	5,'*/MOD'	
+ 0587			     2	SSMOD:	
+ 0587  CD		     1		DB	CALLL
+ 0588  0081 R		     1		DW	DOLST	
+ 058A  0155 R 0562 R 0133 R		DW	TOR,MSTAR,RFROM,MSMOD,EXIT
+       04A8 R 00F1 R
+				;   */	( n1 n2 n3 -- q )
+				;	Multiply n1 by n2, then divide by n3. Return quotient only.
+					$COLON	2,'*/',STASL
+ 0594  0581 R		     2		DW      _LINK	    
+ 0596
+ 0596  02 2A 2F		     2		DB	2,'*/'	
+ 0599			     2	STASL:	
+ 0599  CD		     1		DB	CALLL
+ 059A  0081 R		     1		DW	DOLST	
+ 059C  0587 R 01B4 R 019D R		DW	SSMOD,SWAP,DROP,EXIT
+       00F1 R
+				;; Miscellaneous
+				;   CELL+	( a -- a )
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 20 - 1
+
+
+				;	Add cell size in byte to address.
+					$COLON  5,'CELL+',CELLP
+ 05A4  0596 R		     2		DW      _LINK	    
+ 05A6
+ 05A6  05 43 45 4C 4C 2B     2		DB	5,'CELL+'	
+ 05AC			     2	CELLP:	
+ 05AC  CD		     1		DB	CALLL
+ 05AD  0081 R		     1		DW	DOLST	
+ 05AF  006E R 0002 032B R		DW	DOLIT,CELLL,PLUS,EXIT
+       00F1 R
+				;   CELL-	( a -- a )
+				;	Subtract cell size in byte from address.
+					$COLON  5,'CELL-',CELLM
+ 05B7  05A6 R		     2		DW      _LINK	    
+ 05B9
+ 05B9  05 43 45 4C 4C 2D     2		DB	5,'CELL-'	
+ 05BF			     2	CELLM:	
+ 05BF  CD		     1		DB	CALLL
+ 05C0  0081 R		     1		DW	DOLST	
+ 05C2  006E R FFFE 032B R		DW	DOLIT,0-CELLL,PLUS,EXIT
+       00F1 R
+				;   CELLS	( n -- n )
+				;	Multiply tos by cell size in bytes.
+					$COLON  5,'CELLS',CELLS
+ 05CA  05B9 R		     2		DW      _LINK	    
+ 05CC
+ 05CC  05 43 45 4C 4C 53     2		DB	5,'CELLS'	
+ 05D2			     2	CELLS:	
+ 05D2  CD		     1		DB	CALLL
+ 05D3  0081 R		     1		DW	DOLST	
+ 05D5  006E R 0002 0554 R		DW	DOLIT,CELLL,STAR,EXIT
+       00F1 R
+				;   1+	  ( a -- a )
+				;	Add cell size in byte to address.
+					$COLON  2,'1+',ONEP
+ 05DD  05CC R		     2		DW      _LINK	    
+ 05DF
+ 05DF  02 31 2B		     2		DB	2,'1+'	
+ 05E2			     2	ONEP:	
+ 05E2  CD		     1		DB	CALLL
+ 05E3  0081 R		     1		DW	DOLST	
+ 05E5  006E R 0001 032B R		DW      DOLIT,1,PLUS,EXIT
+       00F1 R
+				;   1-	  ( a -- a )
+				;	Subtract cell size in byte from address.
+					$COLON  2,'1-',ONEM
+ 05ED  05DF R		     2		DW      _LINK	    
+ 05EF
+ 05EF  02 31 2D		     2		DB	2,'1-'	
+ 05F2			     2	ONEM:	
+ 05F2  CD		     1		DB	CALLL
+ 05F3  0081 R		     1		DW	DOLST	
+ 05F5  006E R FFFF 032B R		DW      DOLIT,-1,PLUS,EXIT
+       00F1 R
+				;   2/	  ( n -- n )
+				;	Multiply tos by cell size in bytes.
+					$COLON  2,'2/',TWOSL
+ 05FD  05EF R		     2		DW      _LINK	    
+ 05FF
+ 05FF  02 32 2F		     2		DB	2,'2/'	
+ 0602			     2	TWOSL:	
+ 0602  CD		     1		DB	CALLL
+ 0603  0081 R		     1		DW	DOLST	
+ 0605  006E R 0002 0506 R		DW      DOLIT,CELLL,SLASH,EXIT
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 21 - 1
+
+
+       00F1 R
+				;   BL	( -- 32 )
+				;	Return 32, the blank character.
+
+					$COLON	2,'BL',BLANK
+ 060D  05FF R		     2		DW      _LINK	    
+ 060F
+ 060F  02 42 4C		     2		DB	2,'BL'	
+ 0612			     2	BLANK:	
+ 0612  CD		     1		DB	CALLL
+ 0613  0081 R		     1		DW	DOLST	
+ 0615  006E R 0020 00F1 R		DW	DOLIT,' ',EXIT
+				;   >CHAR       ( c -- c )
+				;	Filter non-printing characters.
+					$COLON  5,'>CHAR',TCHAR
+ 061B  060F R		     2		DW      _LINK	    
+ 061D
+ 061D  05 3E 43 48 41 52     2		DB	5,'>CHAR'	
+ 0623			     2	TCHAR:	
+ 0623  CD		     1		DB	CALLL
+ 0624  0081 R		     1		DW	DOLST	
+ 0626  006E R 007F 01E5 R		DW	DOLIT,07FH,ANDD,DUPP	;mask msb
+       01A7 R
+ 062E  006E R 007F 0612 R		DW	DOLIT,127,BLANK,WITHI	;check for printable
+       0427 R
+ 0636  00C2 R 0640 R			DW	QBRAN,TCHA1
+ 063A  019D R 006E R 005F		DW	DROP,DOLIT,'_'	;replace non-printables
+ 0640				TCHA1:
+ 0640  00F1 R				DW	EXIT
+				;; Memory access
+				;   +!	( n a -- )
+				;	Add n to the contents at address a.
+					$COLON	2,'+!',PSTOR
+ 0642  061D R		     2		DW      _LINK	    
+ 0644
+ 0644  02 2B 21		     2		DB	2,'+!'	
+ 0647			     2	PSTOR:	
+ 0647  CD		     1		DB	CALLL
+ 0648  0081 R		     1		DW	DOLST	
+ 064A  01B4 R 01C1 R 010E R		DW	SWAP,OVER,AT,PLUS
+       032B R
+ 0652  01B4 R 0102 R 00F1 R		DW	SWAP,STORE,EXIT
+				;   2!	( d a -- )
+				;	Store the double integer to address a.
+					$COLON	2,'2!',DSTOR
+ 0658  0644 R		     2		DW      _LINK	    
+ 065A
+ 065A  02 32 21		     2		DB	2,'2!'	
+ 065D			     2	DSTOR:	
+ 065D  CD		     1		DB	CALLL
+ 065E  0081 R		     1		DW	DOLST	
+ 0660  01B4 R 01C1 R 0102 R		DW	SWAP,OVER,STORE
+ 0666  05AC R 0102 R 00F1 R		DW	CELLP,STORE,EXIT
+				;   2@	( a -- d )
+				;	Fetch double integer from address a.
+					$COLON	2,'2@',DAT
+ 066C  065A R		     2		DW      _LINK	    
+ 066E
+ 066E  02 32 40		     2		DB	2,'2@'	
+ 0671			     2	DAT:	
+ 0671  CD		     1		DB	CALLL
+ 0672  0081 R		     1		DW	DOLST	
+ 0674  01A7 R 05AC R 010E R		DW	DUPP,CELLP,AT
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 22 - 1
+
+
+ 067A  01B4 R 010E R 00F1 R		DW	SWAP,AT,EXIT
+				;   COUNT	( b -- b +n )
+				;	Return count byte of a string and add 1 to byte address.
+					$COLON	5,'COUNT',COUNT
+ 0680  066E R		     2		DW      _LINK	    
+ 0682
+ 0682  05 43 4F 55 4E 54     2		DB	5,'COUNT'	
+ 0688			     2	COUNT:	
+ 0688  CD		     1		DB	CALLL
+ 0689  0081 R		     1		DW	DOLST	
+ 068B  01A7 R 05E2 R			DW      DUPP,ONEP
+ 068F  01B4 R 0126 R 00F1 R		DW	SWAP,CAT,EXIT
+				;   HERE	( -- a )
+				;	Return the top of the code dictionary.
+					$COLON	4,'HERE',HERE
+ 0695  0682 R		     2		DW      _LINK	    
+ 0697
+ 0697  04 48 45 52 45	     2		DB	4,'HERE'	
+ 069C			     2	HERE:	
+ 069C  CD		     1		DB	CALLL
+ 069D  0081 R		     1		DW	DOLST	
+ 069F  02CA R 010E R 00F1 R		DW	CP,AT,EXIT
+				;   PAD	( -- a )
+				;	Return the address of the text buffer above the code dictionary.
+					$COLON	3,'PAD',PAD
+ 06A5  0697 R		     2		DW      _LINK	    
+ 06A7
+ 06A7  03 50 41 44	     2		DB	3,'PAD'	
+ 06AB			     2	PAD:	
+ 06AB  CD		     1		DB	CALLL
+ 06AC  0081 R		     1		DW	DOLST	
+ 06AE  069C R 006E R 0050		DW	HERE,DOLIT,80,PLUS,EXIT
+       032B R 00F1 R
+				;   TIB	( -- a )
+				;	Return the address of the terminal input buffer.
+					$COLON	3,'TIB',TIB
+ 06B8  06A7 R		     2		DW      _LINK	    
+ 06BA
+ 06BA  03 54 49 42	     2		DB	3,'TIB'	
+ 06BE			     2	TIB:	
+ 06BE  CD		     1		DB	CALLL
+ 06BF  0081 R		     1		DW	DOLST	
+ 06C1  006E R 1F90 00F1 R		DW	DOLIT,TIBB,EXIT
+				;   @EXECUTE	( a -- )
+				;	Execute vector stored in address a.
+					$COLON	8,'@EXECUTE',ATEXE
+ 06C7  06BA R		     2		DW      _LINK	    
+ 06C9
+ 06C9  08 40 45 58 45 43     2		DB	8,'@EXECUTE'	
+       55 54 45
+ 06D2			     2	ATEXE:	
+ 06D2  CD		     1		DB	CALLL
+ 06D3  0081 R		     1		DW	DOLST	
+ 06D5  010E R 02E6 R			DW	AT,QDUP	;?address or zero
+ 06D9  00C2 R 06DF R			DW	QBRAN,EXE1
+ 06DD  00E8 R				DW	EXECU	;execute if non-zero
+ 06DF				EXE1:
+ 06DF  00F1 R				DW	EXIT	;do nothing if zero
+				;   CMOVE	( b1 b2 u -- )
+				;	Copy u bytes from b1 to b2.
+					$COLON	5,'CMOVE',CMOVEE
+ 06E1  06C9 R		     2		DW      _LINK	    
+ 06E3
+ 06E3  05 43 4D 4F 56 45     2		DB	5,'CMOVE'	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 23 - 1
+
+
+ 06E9			     2	CMOVEE:	
+ 06E9  CD		     1		DB	CALLL
+ 06EA  0081 R		     1		DW	DOLST	
+ 06EC  0155 R				DW	TOR
+ 06EE  00D6 R 0702 R			DW	BRAN,CMOV2
+ 06F2				CMOV1:
+ 06F2  0155 R 01A7 R 0126 R		DW	TOR,DUPP,CAT
+ 06F8  0146 R 011B R			DW	RAT,CSTOR
+ 06FC  05E2 R				DW      ONEP
+ 06FE  0133 R 05E2 R			DW      RFROM,ONEP
+ 0702				CMOV2:
+ 0702  0096 R 06F2 R			DW	DONXT,CMOV1
+ 0706  030E R 00F1 R			DW	DDROP,EXIT
+				;   FILL	( b u c -- )
+				;	Fill u bytes of character c to area beginning at b.
+					$COLON	4,'FILL',FILL
+ 070A  06E3 R		     2		DW      _LINK	    
+ 070C
+ 070C  04 46 49 4C 4C	     2		DB	4,'FILL'	
+ 0711			     2	FILL:	
+ 0711  CD		     1		DB	CALLL
+ 0712  0081 R		     1		DW	DOLST	
+ 0714  01B4 R 0155 R 01B4 R		DW	SWAP,TOR,SWAP
+ 071A  00D6 R 0724 R			DW	BRAN,FILL2
+ 071E				FILL1:
+ 071E  031E R 011B R 05E2 R		  DW      DDUP,CSTOR,ONEP
+ 0724				FILL2:
+ 0724  0096 R 071E R			DW	DONXT,FILL1
+ 0728  030E R 00F1 R			DW	DDROP,EXIT
+				;   ERASE       ( b u -- )
+				;	       Erase u bytes beginning at b.
+					$COLON  5,'ERASE',ERASE
+ 072C  070C R		     2		DW      _LINK	    
+ 072E
+ 072E  05 45 52 41 53 45     2		DB	5,'ERASE'	
+ 0734			     2	ERASE:	
+ 0734  CD		     1		DB	CALLL
+ 0735  0081 R		     1		DW	DOLST	
+ 0737  006E R 0000 0711 R		DW      DOLIT,0,FILL
+ 073D  00F1 R				DW      EXIT
+				;   PACK$	( b u a -- a )
+				;	Build a counted string with u characters from b. Null fill.
+					$COLON  5,'PACK$',PACKS
+ 073F  072E R		     2		DW      _LINK	    
+ 0741
+ 0741  05 50 41 43 4B 24     2		DB	5,'PACK$'	
+ 0747			     2	PACKS:	
+ 0747  CD		     1		DB	CALLL
+ 0748  0081 R		     1		DW	DOLST	
+ 074A  01A7 R 0155 R			DW      DUPP,TOR	  ;strings only on cell boundary
+ 074E  031E R 011B R 05E2 R		DW      DDUP,CSTOR,ONEP ;save count
+ 0754  01B4 R 06E9 R 0133 R		DW	SWAP,CMOVEE,RFROM,EXIT	;move string
+       00F1 R
+				;; Numeric output, single precision
+				;   DIGIT	( u -- c )
+				;	Convert digit u to a character.
+					$COLON  5,'DIGIT',DIGIT
+ 075C  0741 R		     2		DW      _LINK	    
+ 075E
+ 075E  05 44 49 47 49 54     2		DB	5,'DIGIT'	
+ 0764			     2	DIGIT:	
+ 0764  CD		     1		DB	CALLL
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 24 - 1
+
+
+ 0765  0081 R		     1		DW	DOLST	
+ 0767  006E R 0009 01C1 R		DW	DOLIT,9,OVER,LESS
+       03D5 R
+ 076F  006E R 0007 01E5 R		DW	DOLIT,7,ANDD,PLUS
+       032B R
+ 0777  006E R 0030 032B R		DW	DOLIT,'0',PLUS,EXIT
+       00F1 R
+				;   EXTRACT	( n base -- n c )
+				;	Extract the least significant digit from n.
+					$COLON  7,'EXTRACT',EXTRC
+ 077F  075E R		     2		DW      _LINK	    
+ 0781
+ 0781  07 45 58 54 52 41     2		DB	7,'EXTRACT'	
+       43 54
+ 0789			     2	EXTRC:	
+ 0789  CD		     1		DB	CALLL
+ 078A  0081 R		     1		DW	DOLST	
+ 078C  006E R 0000 01B4 R		DW	DOLIT,0,SWAP,UMMOD
+       0441 R
+ 0794  01B4 R 0764 R 00F1 R		DW	SWAP,DIGIT,EXIT
+				;   <#	( -- )
+				;	Initiate the numeric output process.
+					$COLON	2,'<#',BDIGS
+ 079A  0781 R		     2		DW      _LINK	    
+ 079C
+ 079C  02 3C 23		     2		DB	2,'<#'	
+ 079F			     2	BDIGS:	
+ 079F  CD		     1		DB	CALLL
+ 07A0  0081 R		     1		DW	DOLST	
+ 07A2  06AB R 02AD R 0102 R		DW	PAD,HLD,STORE,EXIT
+       00F1 R
+				;   HOLD	( c -- )
+				;	Insert a character into the numeric output string.
+					$COLON	4,'HOLD',HOLD
+ 07AA  079C R		     2		DW      _LINK	    
+ 07AC
+ 07AC  04 48 4F 4C 44	     2		DB	4,'HOLD'	
+ 07B1			     2	HOLD:	
+ 07B1  CD		     1		DB	CALLL
+ 07B2  0081 R		     1		DW	DOLST	
+ 07B4  02AD R 010E R 05F2 R		DW      HLD,AT,ONEM
+ 07BA  01A7 R 02AD R 0102 R		DW	DUPP,HLD,STORE,CSTOR,EXIT
+       011B R 00F1 R
+				;   #	( u -- u )
+				;	Extract one digit from u and append the digit to output string.
+					$COLON	1,'#',DIG
+ 07C4  07AC R		     2		DW      _LINK	    
+ 07C6
+ 07C6  01 23		     2		DB	1,'#'	
+ 07C8			     2	DIG:	
+ 07C8  CD		     1		DB	CALLL
+ 07C9  0081 R		     1		DW	DOLST	
+ 07CB  0269 R 010E R 0789 R		DW	BASE,AT,EXTRC,HOLD,EXIT
+       07B1 R 00F1 R
+				;   #S	( u -- 0 )
+				;	Convert u until all digits are added to the output string.
+					$COLON	2,'#S',DIGS
+ 07D5  07C6 R		     2		DW      _LINK	    
+ 07D7
+ 07D7  02 23 53		     2		DB	2,'#S'	
+ 07DA			     2	DIGS:	
+ 07DA  CD		     1		DB	CALLL
+ 07DB  0081 R		     1		DW	DOLST	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 25 - 1
+
+
+ 07DD				DIGS1:
+ 07DD  07C8 R 01A7 R			DW	DIG,DUPP
+ 07E1  00C2 R 07E9 R			DW	QBRAN,DIGS2
+ 07E5  00D6 R 07DD R			DW	BRAN,DIGS1
+ 07E9				DIGS2:
+ 07E9  00F1 R				DW	EXIT
+				;   SIGN	( n -- )
+				;	Add a minus sign to the numeric output string.
+					$COLON	4,'SIGN',SIGN
+ 07EB  07D7 R		     2		DW      _LINK	    
+ 07ED
+ 07ED  04 53 49 47 4E	     2		DB	4,'SIGN'	
+ 07F2			     2	SIGN:	
+ 07F2  CD		     1		DB	CALLL
+ 07F3  0081 R		     1		DW	DOLST	
+ 07F5  01CE R				DW	ZLESS
+ 07F7  00C2 R 0801 R			DW	QBRAN,SIGN1
+ 07FB  006E R 002D 07B1 R		DW	DOLIT,'-',HOLD
+ 0801				SIGN1:
+ 0801  00F1 R				DW	EXIT
+				;   #>	( w -- b u )
+				;	Prepare the output string to be TYPE'd.
+					$COLON	2,'#>',EDIGS
+ 0803  07ED R		     2		DW      _LINK	    
+ 0805
+ 0805  02 23 3E		     2		DB	2,'#>'	
+ 0808			     2	EDIGS:	
+ 0808  CD		     1		DB	CALLL
+ 0809  0081 R		     1		DW	DOLST	
+ 080B  019D R 02AD R 010E R		DW	DROP,HLD,AT
+ 0811  06AB R 01C1 R 037A R		DW	PAD,OVER,SUBBB,EXIT
+       00F1 R
+				;   str	( w -- b u )
+				;	Convert a signed integer to a numeric string.
+					$COLON  3,'str',STRR
+ 0819  0805 R		     2		DW      _LINK	    
+ 081B
+ 081B  03 73 74 72	     2		DB	3,'str'	
+ 081F			     2	STRR:	
+ 081F  CD		     1		DB	CALLL
+ 0820  0081 R		     1		DW	DOLST	
+ 0822  01A7 R 0155 R 0389 R		DW	DUPP,TOR,ABSS
+ 0828  079F R 07DA R 0133 R		DW	BDIGS,DIGS,RFROM
+ 082E  07F2 R 0808 R 00F1 R		DW	SIGN,EDIGS,EXIT
+				;   HEX	( -- )
+				;	Use radix 16 as base for numeric conversions.
+					$COLON	3,'HEX',HEX
+ 0834  081B R		     2		DW      _LINK	    
+ 0836
+ 0836  03 48 45 58	     2		DB	3,'HEX'	
+ 083A			     2	HEX:	
+ 083A  CD		     1		DB	CALLL
+ 083B  0081 R		     1		DW	DOLST	
+ 083D  006E R 0010 0269 R		DW	DOLIT,16,BASE,STORE,EXIT
+       0102 R 00F1 R
+				;   DECIMAL	( -- )
+				;	Use radix 10 as base for numeric conversions.
+					$COLON	7,'DECIMAL',DECIM
+ 0847  0836 R		     2		DW      _LINK	    
+ 0849
+ 0849  07 44 45 43 49 4D     2		DB	7,'DECIMAL'	
+       41 4C
+ 0851			     2	DECIM:	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 26 - 1
+
+
+ 0851  CD		     1		DB	CALLL
+ 0852  0081 R		     1		DW	DOLST	
+ 0854  006E R 000A 0269 R		DW	DOLIT,10,BASE,STORE,EXIT
+       0102 R 00F1 R
+				;; Numeric input, single precision
+				;   DIGIT?	( c base -- u t )
+				;	Convert a character to its numeric value. A flag indicates success.
+					$COLON  6,'DIGIT?',DIGTQ
+ 085E  0849 R		     2		DW      _LINK	    
+ 0860
+ 0860  06 44 49 47 49 54     2		DB	6,'DIGIT?'	
+       3F
+ 0867			     2	DIGTQ:	
+ 0867  CD		     1		DB	CALLL
+ 0868  0081 R		     1		DW	DOLST	
+ 086A  0155 R 006E R 0030		DW	TOR,DOLIT,'0',SUBBB
+       037A R
+ 0872  006E R 0009 01C1 R		DW	DOLIT,9,OVER,LESS
+       03D5 R
+ 087A  00C2 R 088E R			DW	QBRAN,DGTQ1
+ 087E  006E R 0007 037A R		DW	DOLIT,7,SUBBB
+ 0884  01A7 R 006E R 000A		DW	DUPP,DOLIT,10,LESS,ORR
+       03D5 R 01F6 R
+ 088E				DGTQ1:
+ 088E  01A7 R 0133 R 03B6 R		DW	DUPP,RFROM,ULESS,EXIT
+       00F1 R
+				;   NUMBER?	( a -- n T | a F )
+				;	Convert a number string to integer. Push a flag on tos.
+					$COLON	7,'NUMBER?',NUMBQ
+ 0896  0860 R		     2		DW      _LINK	    
+ 0898
+ 0898  07 4E 55 4D 42 45     2		DB	7,'NUMBER?'	
+       52 3F
+ 08A0			     2	NUMBQ:	
+ 08A0  CD		     1		DB	CALLL
+ 08A1  0081 R		     1		DW	DOLST	
+ 08A3  0269 R 010E R 0155 R		DW	BASE,AT,TOR,DOLIT,0,OVER,COUNT
+       006E R 0000 01C1 R
+       0688 R
+ 08B1  01C1 R 0126 R 006E R		DW	OVER,CAT,DOLIT,'$',EQUAL
+       0024 039C R
+ 08BB  00C2 R 08C9 R			DW	QBRAN,NUMQ1
+ 08BF  083A R 01B4 R 05E2 R		DW      HEX,SWAP,ONEP
+ 08C5  01B4 R 05F2 R			DW      SWAP,ONEM
+ 08C9				NUMQ1:
+ 08C9  01C1 R 0126 R 006E R		DW	OVER,CAT,DOLIT,'-',EQUAL,TOR
+       002D 039C R 0155 R
+ 08D5  01B4 R 0146 R 037A R		DW	SWAP,RAT,SUBBB,SWAP,RAT,PLUS,QDUP
+       01B4 R 0146 R 032B R
+       02E6 R
+ 08E3  00C2 R 092D R			DW	QBRAN,NUMQ6
+ 08E7  05F2 R 0155 R			DW      ONEM,TOR
+ 08EB				NUMQ2:
+ 08EB  01A7 R 0155 R 0126 R		DW	DUPP,TOR,CAT,BASE,AT,DIGTQ
+       0269 R 010E R 0867 R
+ 08F7  00C2 R 091F R			DW	QBRAN,NUMQ4
+ 08FB  01B4 R 0269 R 010E R		DW	SWAP,BASE,AT,STAR,PLUS,RFROM
+       0554 R 032B R 0133 R
+ 0907  05E2 R				DW      ONEP
+ 0909  0096 R 08EB R			DW	DONXT,NUMQ2
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 27 - 1
+
+
+ 090D  0146 R 01B4 R 019D R		DW	RAT,SWAP,DROP
+ 0913  00C2 R 0919 R			DW	QBRAN,NUMQ3
+ 0917  034E R				DW	NEGAT
+ 0919				NUMQ3:
+ 0919  01B4 R				DW	SWAP
+ 091B  00D6 R 092B R			DW	BRAN,NUMQ5
+ 091F				NUMQ4:
+ 091F  0133 R 0133 R 030E R		DW	RFROM,RFROM,DDROP,DDROP,DOLIT,0
+       030E R 006E R 0000
+ 092B				NUMQ5:
+ 092B  01A7 R				DW	DUPP
+ 092D				NUMQ6:
+ 092D  0133 R 030E R			DW	RFROM,DDROP
+ 0931  0133 R 0269 R 0102 R		DW	RFROM,BASE,STORE,EXIT
+       00F1 R
+				;; Basic I/O
+				;   KEY	( -- c )
+				;	Wait for and return an input character.
+					$COLON	3,'KEY',KEY
+ 0939  0898 R		     2		DW      _LINK	    
+ 093B
+ 093B  03 4B 45 59	     2		DB	3,'KEY'	
+ 093F			     2	KEY:	
+ 093F  CD		     1		DB	CALLL
+ 0940  0081 R		     1		DW	DOLST	
+ 0942				KEY1:
+ 0942  0031 R				DW	QKEY
+ 0944  00C2 R 0942 R			DW	QBRAN,KEY1
+ 0948  00F1 R				DW	EXIT
+				;   NUF?	( -- t )
+				;	Return false if no input, else pause and if CR return true.
+					$COLON	4,'NUF?',NUFQ
+ 094A  093B R		     2		DW      _LINK	    
+ 094C
+ 094C  04 4E 55 46 3F	     2		DB	4,'NUF?'	
+ 0951			     2	NUFQ:	
+ 0951  CD		     1		DB	CALLL
+ 0952  0081 R		     1		DW	DOLST	
+ 0954  0031 R 01A7 R			DW	QKEY,DUPP
+ 0958  00C2 R 0966 R			DW	QBRAN,NUFQ1
+ 095C  030E R 093F R 006E R		DW	DDROP,KEY,DOLIT,CRR,EQUAL
+       000D 039C R
+ 0966				NUFQ1:
+ 0966  00F1 R				DW	EXIT
+				;   SPACE	( -- )
+				;	Send the blank character to the output device.
+					$COLON	5,'SPACE',SPACE
+ 0968  094C R		     2		DW      _LINK	    
+ 096A
+ 096A  05 53 50 41 43 45     2		DB	5,'SPACE'	
+ 0970			     2	SPACE:	
+ 0970  CD		     1		DB	CALLL
+ 0971  0081 R		     1		DW	DOLST	
+ 0973  0612 R 0051 R 00F1 R		DW	BLANK,EMIT,EXIT
+				;   SPACES	( +n -- )
+				;	Send n spaces to the output device.
+					$COLON	6,'SPACES',SPACS
+ 0979  096A R		     2		DW      _LINK	    
+ 097B
+ 097B  06 53 50 41 43 45     2		DB	6,'SPACES'	
+       53
+ 0982			     2	SPACS:	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 28 - 1
+
+
+ 0982  CD		     1		DB	CALLL
+ 0983  0081 R		     1		DW	DOLST	
+ 0985  006E R 0000 03F4 R		DW	DOLIT,0,MAX,TOR
+       0155 R
+ 098D  00D6 R 0993 R			DW	BRAN,CHAR2
+ 0991				CHAR1:
+ 0991  0970 R				DW	SPACE
+ 0993				CHAR2:
+ 0993  0096 R 0991 R			DW	DONXT,CHAR1
+ 0997  00F1 R				DW	EXIT
+				;   TYPE	( b u -- )
+				;	Output u characters from b.
+					$COLON	4,'TYPE',TYPES
+ 0999  097B R		     2		DW      _LINK	    
+ 099B
+ 099B  04 54 59 50 45	     2		DB	4,'TYPE'	
+ 09A0			     2	TYPES:	
+ 09A0  CD		     1		DB	CALLL
+ 09A1  0081 R		     1		DW	DOLST	
+ 09A3  0155 R				DW	TOR
+ 09A5  00D6 R 09B3 R			DW	BRAN,TYPE2
+ 09A9				TYPE1:
+ 09A9  01A7 R 0126 R 0623 R		DW	DUPP,CAT,TCHAR,EMIT
+       0051 R
+ 09B1  05E2 R				DW      ONEP
+ 09B3				TYPE2:
+ 09B3  0096 R 09A9 R			DW	DONXT,TYPE1
+ 09B7  019D R 00F1 R			DW	DROP,EXIT
+				;   CR	( -- )
+				;	Output a carriage return and a line feed.
+					$COLON	2,'CR',CR
+ 09BB  099B R		     2		DW      _LINK	    
+ 09BD
+ 09BD  02 43 52		     2		DB	2,'CR'	
+ 09C0			     2	CR:	
+ 09C0  CD		     1		DB	CALLL
+ 09C1  0081 R		     1		DW	DOLST	
+ 09C3  006E R 000D 0051 R		DW	DOLIT,CRR,EMIT
+ 09C9  006E R 000A 0051 R		DW	DOLIT,LF,EMIT,EXIT
+       00F1 R
+				;   do$	( -- a )
+				;	Return the address of a compiled string.
+					$COLON  COMPO+3,'do$',DOSTR
+ 09D1  09BD R		     2		DW      _LINK	    
+ 09D3
+ 09D3  43 64 6F 24	     2		DB	COMPO+3,'do$'	
+ 09D7			     2	DOSTR:	
+ 09D7  CD		     1		DB	CALLL
+ 09D8  0081 R		     1		DW	DOLST	
+ 09DA  0133 R 0146 R 0133 R		DW	RFROM,RAT,RFROM,COUNT,PLUS
+       0688 R 032B R
+				;	       DW      TOR,SWAP,TOR,EXIT
+ 09E4  0155 R 01B4 R 0155 R		DW      TOR,SWAP,TOR,EXIT
+       00F1 R
+				;   $"|	( -- a )
+				;	Run time routine compiled by $". Return address of a compiled string.
+					$COLON  COMPO+3,'$"|',STRQP
+ 09EC  09D3 R		     2		DW      _LINK	    
+ 09EE
+ 09EE  43 24 22 7C	     2		DB	COMPO+3,'$"|'	
+ 09F2			     2	STRQP:	
+ 09F2  CD		     1		DB	CALLL
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 29 - 1
+
+
+ 09F3  0081 R		     1		DW	DOLST	
+ 09F5  09D7 R 00F1 R			DW	DOSTR,EXIT	;force a call to do$
+				;   ."|	( -- )
+				;	Run time routine of ." . Output a compiled string.
+					$COLON  COMPO+3,'."|',DOTQP
+ 09F9  09EE R		     2		DW      _LINK	    
+ 09FB
+ 09FB  43 2E 22 7C	     2		DB	COMPO+3,'."|'	
+ 09FF			     2	DOTQP:	
+ 09FF  CD		     1		DB	CALLL
+ 0A00  0081 R		     1		DW	DOLST	
+ 0A02  09D7 R 0688 R 09A0 R		DW	DOSTR,COUNT,TYPES,EXIT
+       00F1 R
+				;   .R	( n +n -- )
+				;	Display an integer in a field of n columns, right justified.
+					$COLON	2,'.R',DOTR
+ 0A0A  09FB R		     2		DW      _LINK	    
+ 0A0C
+ 0A0C  02 2E 52		     2		DB	2,'.R'	
+ 0A0F			     2	DOTR:	
+ 0A0F  CD		     1		DB	CALLL
+ 0A10  0081 R		     1		DW	DOLST	
+ 0A12  0155 R 081F R 0133 R		DW	TOR,STRR,RFROM,OVER,SUBBB
+       01C1 R 037A R
+ 0A1C  0982 R 09A0 R 00F1 R		DW	SPACS,TYPES,EXIT
+				;   U.R	( u +n -- )
+				;	Display an unsigned integer in n column, right justified.
+					$COLON	3,'U.R',UDOTR
+ 0A22  0A0C R		     2		DW      _LINK	    
+ 0A24
+ 0A24  03 55 2E 52	     2		DB	3,'U.R'	
+ 0A28			     2	UDOTR:	
+ 0A28  CD		     1		DB	CALLL
+ 0A29  0081 R		     1		DW	DOLST	
+ 0A2B  0155 R 079F R 07DA R		DW	TOR,BDIGS,DIGS,EDIGS
+       0808 R
+ 0A33  0133 R 01C1 R 037A R		DW	RFROM,OVER,SUBBB
+ 0A39  0982 R 09A0 R 00F1 R		DW	SPACS,TYPES,EXIT
+				;   U.	( u -- )
+				;	Display an unsigned integer in free format.
+					$COLON	2,'U.',UDOT
+ 0A3F  0A24 R		     2		DW      _LINK	    
+ 0A41
+ 0A41  02 55 2E		     2		DB	2,'U.'	
+ 0A44			     2	UDOT:	
+ 0A44  CD		     1		DB	CALLL
+ 0A45  0081 R		     1		DW	DOLST	
+ 0A47  079F R 07DA R 0808 R		DW	BDIGS,DIGS,EDIGS
+ 0A4D  0970 R 09A0 R 00F1 R		DW	SPACE,TYPES,EXIT
+				;   .	( w -- )
+				;	Display an integer in free format, preceeded by a space.
+					$COLON	1,'.',DOT
+ 0A53  0A41 R		     2		DW      _LINK	    
+ 0A55
+ 0A55  01 2E		     2		DB	1,'.'	
+ 0A57			     2	DOT:	
+ 0A57  CD		     1		DB	CALLL
+ 0A58  0081 R		     1		DW	DOLST	
+ 0A5A  0269 R 010E R 006E R		DW	BASE,AT,DOLIT,10,XORR	;?decimal
+       000A 0208 R
+ 0A64  00C2 R 0A6C R			DW	QBRAN,DOT1
+ 0A68  0A44 R 00F1 R			DW	UDOT,EXIT	;no, display unsigned
+ 0A6C				DOT1:
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 30 - 1
+
+
+ 0A6C  081F R 0970 R 09A0 R		DW	STRR,SPACE,TYPES,EXIT	;yes, display signed
+       00F1 R
+				;   ?	( a -- )
+				;	Display the contents in a memory cell.
+					$COLON	1,'?',QUEST
+ 0A74  0A55 R		     2		DW      _LINK	    
+ 0A76
+ 0A76  01 3F		     2		DB	1,'?'	
+ 0A78			     2	QUEST:	
+ 0A78  CD		     1		DB	CALLL
+ 0A79  0081 R		     1		DW	DOLST	
+ 0A7B  010E R 0A57 R 00F1 R		DW	AT,DOT,EXIT
+				;; Parsing
+				;   parse	( b u c -- b u delta ; <string> )
+				;	Scan string delimited by c. Return found string and its offset.
+					$COLON  5,'parse',PARS
+ 0A81  0A76 R		     2		DW      _LINK	    
+ 0A83
+ 0A83  05 70 61 72 73 65     2		DB	5,'parse'	
+ 0A89			     2	PARS:	
+ 0A89  CD		     1		DB	CALLL
+ 0A8A  0081 R		     1		DW	DOLST	
+ 0A8C  0276 R 0102 R 01C1 R		DW	TEMP,STORE,OVER,TOR,DUPP
+       0155 R 01A7 R
+ 0A96  00C2 R 0B14 R			DW	QBRAN,PARS8
+ 0A9A  05F2 R 0276 R 010E R		DW      ONEM,TEMP,AT,BLANK,EQUAL
+       0612 R 039C R
+ 0AA4  00C2 R 0ACE R			DW	QBRAN,PARS3
+ 0AA8  0155 R				DW	TOR
+ 0AAA				PARS1:
+ 0AAA  0612 R 01C1 R 0126 R		DW	BLANK,OVER,CAT	;skip leading blanks ONLY
+ 0AB0  037A R 01CE R 033A R		DW	SUBBB,ZLESS,INVER
+ 0AB6  00C2 R 0ACC R			DW	QBRAN,PARS2
+ 0ABA  05E2 R				DW      ONEP
+ 0ABC  0096 R 0AAA R			DW	DONXT,PARS1
+ 0AC0  0133 R 019D R 006E R		DW	RFROM,DROP,DOLIT,0,DUPP,EXIT
+       0000 01A7 R 00F1 R
+ 0ACC				PARS2:
+ 0ACC  0133 R				DW	RFROM
+ 0ACE				PARS3:
+ 0ACE  01C1 R 01B4 R			DW	OVER,SWAP
+ 0AD2  0155 R				DW	TOR
+ 0AD4				PARS4:
+ 0AD4  0276 R 010E R 01C1 R		DW	TEMP,AT,OVER,CAT,SUBBB	;scan for delimiter
+       0126 R 037A R
+ 0ADE  0276 R 010E R 0612 R		DW	TEMP,AT,BLANK,EQUAL
+       039C R
+ 0AE6  00C2 R 0AEC R			DW	QBRAN,PARS5
+ 0AEA  01CE R				DW	ZLESS
+ 0AEC				PARS5:
+ 0AEC  00C2 R 0AFE R			DW	QBRAN,PARS6
+ 0AF0  05E2 R				DW      ONEP
+ 0AF2  0096 R 0AD4 R			DW	DONXT,PARS4
+ 0AF6  01A7 R 0155 R			DW	DUPP,TOR
+ 0AFA  00D6 R 0B08 R			DW	BRAN,PARS7
+ 0AFE				PARS6:
+ 0AFE  0133 R 019D R 01A7 R		DW	RFROM,DROP,DUPP
+ 0B04  05E2 R 0155 R			DW      ONEP,TOR
+ 0B08				PARS7:
+ 0B08  01C1 R 037A R			DW	OVER,SUBBB
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 31 - 1
+
+
+ 0B0C  0133 R 0133 R 037A R		DW	RFROM,RFROM,SUBBB,EXIT
+       00F1 R
+ 0B14				PARS8:
+ 0B14  01C1 R 0133 R 037A R		DW	OVER,RFROM,SUBBB,EXIT
+       00F1 R
+				;   PARSE	( c -- b u ; <string> )
+				;	Scan input stream and return counted string delimited by c.
+					$COLON	5,'PARSE',PARSE
+ 0B1C  0A83 R		     2		DW      _LINK	    
+ 0B1E
+ 0B1E  05 50 41 52 53 45     2		DB	5,'PARSE'	
+ 0B24			     2	PARSE:	
+ 0B24  CD		     1		DB	CALLL
+ 0B25  0081 R		     1		DW	DOLST	
+ 0B27  0155 R 06BE R 0283 R		DW	TOR,TIB,INN,AT,PLUS	;current input buffer pointer
+       010E R 032B R
+ 0B31  0291 R 010E R 0283 R		DW	NTIB,AT,INN,AT,SUBBB	;remaining count
+       010E R 037A R
+ 0B3B  0133 R 0A89 R 0283 R		DW	RFROM,PARS,INN,PSTOR,EXIT
+       0647 R 00F1 R
+				;   .(	( -- )
+				;	Output following string up to next ) .
+					$COLON	IMEDD+2,'.(',DOTPR
+ 0B45  0B1E R		     2		DW      _LINK	    
+ 0B47
+ 0B47  82 2E 28		     2		DB	IMEDD+2,'.('	
+ 0B4A			     2	DOTPR:	
+ 0B4A  CD		     1		DB	CALLL
+ 0B4B  0081 R		     1		DW	DOLST	
+ 0B4D  006E R 0029 0B24 R		DW	DOLIT,')',PARSE,TYPES,EXIT
+       09A0 R 00F1 R
+				;   (	( -- )
+				;	Ignore following string up to next ) . A comment.
+					$COLON	IMEDD+1,'(',PAREN
+ 0B57  0B47 R		     2		DW      _LINK	    
+ 0B59
+ 0B59  81 28		     2		DB	IMEDD+1,'('	
+ 0B5B			     2	PAREN:	
+ 0B5B  CD		     1		DB	CALLL
+ 0B5C  0081 R		     1		DW	DOLST	
+ 0B5E  006E R 0029 0B24 R		DW	DOLIT,')',PARSE,DDROP,EXIT
+       030E R 00F1 R
+				;   \	( -- )
+				;	Ignore following text till the end of line.
+					$COLON	IMEDD+1,'\',BKSLA
+ 0B68  0B59 R		     2		DW      _LINK	    
+ 0B6A
+ 0B6A  81 5C		     2		DB	IMEDD+1,'\'	
+ 0B6C			     2	BKSLA:	
+ 0B6C  CD		     1		DB	CALLL
+ 0B6D  0081 R		     1		DW	DOLST	
+ 0B6F  0291 R 010E R 0283 R		DW	NTIB,AT,INN,STORE,EXIT
+       0102 R 00F1 R
+				;   WORD	( c -- a ; <string> )
+				;	Parse a word from input stream and copy it to code dictionary.
+					$COLON	4,'WORD',WORDD
+ 0B79  0B6A R		     2		DW      _LINK	    
+ 0B7B
+ 0B7B  04 57 4F 52 44	     2		DB	4,'WORD'	
+ 0B80			     2	WORDD:	
+ 0B80  CD		     1		DB	CALLL
+ 0B81  0081 R		     1		DW	DOLST	
+ 0B83  0B24 R				DW      PARSE
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 32 - 1
+
+
+ 0B85  069C R 05AC R			DW      HERE,CELLP
+ 0B89  0747 R 00F1 R			DW	PACKS,EXIT
+				;   TOKEN	( -- a ; <string> )
+				;	Parse a word from input stream and copy it to name dictionary.
+					$COLON  5,'TOKEN',TOKEN
+ 0B8D  0B7B R		     2		DW      _LINK	    
+ 0B8F
+ 0B8F  05 54 4F 4B 45 4E     2		DB	5,'TOKEN'	
+ 0B95			     2	TOKEN:	
+ 0B95  CD		     1		DB	CALLL
+ 0B96  0081 R		     1		DW	DOLST	
+ 0B98  0612 R 0B80 R 00F1 R		DW      BLANK,WORDD,EXIT
+				;; Dictionary search
+				;   NAME>	( na -- ca )
+				;	Return a code address given a name address.
+					$COLON  5,'NAME>',NAMET
+ 0B9E  0B8F R		     2		DW      _LINK	    
+ 0BA0
+ 0BA0  05 4E 41 4D 45 3E     2		DB	5,'NAME>'	
+ 0BA6			     2	NAMET:	
+ 0BA6  CD		     1		DB	CALLL
+ 0BA7  0081 R		     1		DW	DOLST	
+ 0BA9  0688 R 006E R 001F		DW      COUNT,DOLIT,31,ANDD
+       01E5 R
+ 0BB1  032B R 00F1 R			DW      PLUS,EXIT
+				;   SAME?	( a a u -- a a f \ -0+ )
+				;	Compare u cells in two strings. Return 0 if identical.
+					$COLON  5,'SAME?',SAMEQ
+ 0BB5  0BA0 R		     2		DW      _LINK	    
+ 0BB7
+ 0BB7  05 53 41 4D 45 3F     2		DB	5,'SAME?'	
+ 0BBD			     2	SAMEQ:	
+ 0BBD  CD		     1		DB	CALLL
+ 0BBE  0081 R		     1		DW	DOLST	
+ 0BC0  05F2 R 0155 R			DW      ONEM,TOR
+ 0BC4  00D6 R 0BE6 R			DW	BRAN,SAME2
+ 0BC8				SAME1:
+ 0BC8  01C1 R 0146 R 032B R		  DW      OVER,RAT,PLUS,CAT
+       0126 R
+ 0BD0  01C1 R 0146 R 032B R		DW      OVER,RAT,PLUS,CAT
+       0126 R
+ 0BD8  037A R 02E6 R			DW	SUBBB,QDUP
+ 0BDC  00C2 R 0BE6 R			DW	QBRAN,SAME2
+ 0BE0  0133 R 019D R 00F1 R		DW	RFROM,DROP,EXIT
+ 0BE6				SAME2:
+ 0BE6  0096 R 0BC8 R			DW	DONXT,SAME1
+ 0BEA  006E R 0000 00F1 R		DW	DOLIT,0,EXIT
+				;   find	( a va -- ca na | a F )
+				;	Search a vocabulary for a string. Return ca and na if succeeded.
+					$COLON  4,'find',FIND
+ 0BF0  0BB7 R		     2		DW      _LINK	    
+ 0BF2
+ 0BF2  04 66 69 6E 64	     2		DB	4,'find'	
+ 0BF7			     2	FIND:	
+ 0BF7  CD		     1		DB	CALLL
+ 0BF8  0081 R		     1		DW	DOLST	
+ 0BFA  01B4 R 01A7 R 0126 R		DW	SWAP,DUPP,CAT
+ 0C00  0276 R 0102 R			DW      TEMP,STORE
+ 0C04  01A7 R 010E R 0155 R		DW	DUPP,AT,TOR,CELLP,SWAP
+       05AC R 01B4 R
+ 0C0E				FIND1:
+ 0C0E  010E R 01A7 R			DW	AT,DUPP
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 33 - 1
+
+
+ 0C12  00C2 R 0C3E R			DW	QBRAN,FIND6
+ 0C16  01A7 R 010E R 006E R		DW	DUPP,AT,DOLIT,MASKK,ANDD,RAT,XORR
+       7F1F 01E5 R 0146 R
+       0208 R
+ 0C24  00C2 R 0C32 R			DW	QBRAN,FIND2
+ 0C28  05AC R 006E R FFFF		DW	CELLP,DOLIT,-1
+ 0C2E  00D6 R 0C3A R			DW	BRAN,FIND3
+ 0C32				FIND2:
+ 0C32  05AC R 0276 R 010E R		DW	CELLP,TEMP,AT,SAMEQ
+       0BBD R
+ 0C3A				FIND3:
+ 0C3A  00D6 R 0C4A R			DW	BRAN,FIND4
+ 0C3E				FIND6:
+ 0C3E  0133 R 019D R			DW	RFROM,DROP
+ 0C42  01B4 R 05BF R 01B4 R		DW	SWAP,CELLM,SWAP,EXIT
+       00F1 R
+ 0C4A				FIND4:
+ 0C4A  00C2 R 0C56 R			DW	QBRAN,FIND5
+ 0C4E  05BF R 05BF R			DW	CELLM,CELLM
+ 0C52  00D6 R 0C0E R			DW	BRAN,FIND1
+ 0C56				FIND5:
+ 0C56  0133 R 019D R 01B4 R		DW	RFROM,DROP,SWAP,DROP
+       019D R
+ 0C5E  05BF R				DW	CELLM
+ 0C60  01A7 R 0BA6 R 01B4 R		DW	DUPP,NAMET,SWAP,EXIT
+       00F1 R
+				;   NAME?	( a -- ca na | a F )
+				;	Search all context vocabularies for a string.
+					$COLON  5,'NAME?',NAMEQ
+ 0C68  0BF2 R		     2		DW      _LINK	    
+ 0C6A
+ 0C6A  05 4E 41 4D 45 3F     2		DB	5,'NAME?'	
+ 0C70			     2	NAMEQ:	
+ 0C70  CD		     1		DB	CALLL
+ 0C71  0081 R		     1		DW	DOLST	
+ 0C73  02BE R 0BF7 R 00F1 R		DW      CNTXT,FIND,EXIT
+				;; Terminal response
+				;   ^H	( bot eot cur -- bot eot cur )
+				;	Backup the cursor by one character.
+					$COLON  2,'^h',BKSP
+ 0C79  0C6A R		     2		DW      _LINK	    
+ 0C7B
+ 0C7B  02 5E 68		     2		DB	2,'^h'	
+ 0C7E			     2	BKSP:	
+ 0C7E  CD		     1		DB	CALLL
+ 0C7F  0081 R		     1		DW	DOLST	
+ 0C81  0155 R 01C1 R 0133 R		DW	TOR,OVER,RFROM,SWAP,OVER,XORR
+       01B4 R 01C1 R 0208 R
+ 0C8D  00C2 R 0CA3 R			DW	QBRAN,BACK1
+ 0C91  006E R 0008 0051 R		DW      DOLIT,BKSPP,EMIT,ONEM
+       05F2 R
+ 0C99  0612 R 0051 R			DW      BLANK,EMIT
+ 0C9D  006E R 0008 0051 R		DW      DOLIT,BKSPP,EMIT
+ 0CA3				BACK1:
+ 0CA3  00F1 R				DW	EXIT
+				;   TAP	( bot eot cur c -- bot eot cur )
+				;	Accept and echo the key stroke and bump the cursor.
+					$COLON  3,'TAP',TAP
+ 0CA5  0C7B R		     2		DW      _LINK	    
+ 0CA7
+ 0CA7  03 54 41 50	     2		DB	3,'TAP'	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 34 - 1
+
+
+ 0CAB			     2	TAP:	
+ 0CAB  CD		     1		DB	CALLL
+ 0CAC  0081 R		     1		DW	DOLST	
+ 0CAE  01A7 R 0051 R			DW      DUPP,EMIT
+ 0CB2  01C1 R 011B R 05E2 R		DW      OVER,CSTOR,ONEP,EXIT
+       00F1 R
+				;   kTAP	( bot eot cur c -- bot eot cur )
+				;	Process a key stroke, CR or backspace.
+					$COLON  4,'kTAP',KTAP
+ 0CBA  0CA7 R		     2		DW      _LINK	    
+ 0CBC
+ 0CBC  04 6B 54 41 50	     2		DB	4,'kTAP'	
+ 0CC1			     2	KTAP:	
+ 0CC1  CD		     1		DB	CALLL
+ 0CC2  0081 R		     1		DW	DOLST	
+ 0CC4  01A7 R 006E R 000D		DW	DUPP,DOLIT,CRR,XORR
+       0208 R
+ 0CCC  00C2 R 0CE4 R			DW	QBRAN,KTAP2
+ 0CD0  006E R 0008 0208 R		DW	DOLIT,BKSPP,XORR
+ 0CD6  00C2 R 0CE0 R			DW	QBRAN,KTAP1
+ 0CDA  0612 R 0CAB R 00F1 R		DW	BLANK,TAP,EXIT
+ 0CE0				KTAP1:
+ 0CE0  0C7E R 00F1 R			DW	BKSP,EXIT
+ 0CE4				KTAP2:
+ 0CE4  019D R 01B4 R 019D R		DW	DROP,SWAP,DROP,DUPP,EXIT
+       01A7 R 00F1 R
+				;   accept	( b u -- b u )
+				;	Accept characters to input buffer. Return with actual count.
+					$COLON  6,'ACCEPT',ACCEP
+ 0CEE  0CBC R		     2		DW      _LINK	    
+ 0CF0
+ 0CF0  06 41 43 43 45 50     2		DB	6,'ACCEPT'	
+       54
+ 0CF7			     2	ACCEP:	
+ 0CF7  CD		     1		DB	CALLL
+ 0CF8  0081 R		     1		DW	DOLST	
+ 0CFA  01C1 R 032B R 01C1 R		DW	OVER,PLUS,OVER
+ 0D00				ACCP1:
+ 0D00  031E R 0208 R			DW	DDUP,XORR
+ 0D04  00C2 R 0D24 R			DW	QBRAN,ACCP4
+ 0D08  093F R 01A7 R			DW	KEY,DUPP
+				;	DW	BLANK,SUBBB,DOLIT,95,ULESS
+ 0D0C  0612 R 006E R 007F		DW	BLANK,DOLIT,127,WITHI
+       0427 R
+ 0D14  00C2 R 0D1E R			DW	QBRAN,ACCP2
+ 0D18  0CAB R				DW	TAP
+ 0D1A  00D6 R 0D20 R			DW	BRAN,ACCP3
+ 0D1E				ACCP2:
+ 0D1E  0CC1 R				  DW      KTAP
+ 0D20				ACCP3:
+ 0D20  00D6 R 0D00 R			DW	BRAN,ACCP1
+ 0D24				ACCP4:
+ 0D24  019D R 01C1 R 037A R		DW	DROP,OVER,SUBBB,EXIT
+       00F1 R
+				;   QUERY	( -- )
+				;	Accept input stream to terminal input buffer.
+					$COLON	5,'QUERY',QUERY
+ 0D2C  0CF0 R		     2		DW      _LINK	    
+ 0D2E
+ 0D2E  05 51 55 45 52 59     2		DB	5,'QUERY'	
+ 0D34			     2	QUERY:	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 35 - 1
+
+
+ 0D34  CD		     1		DB	CALLL
+ 0D35  0081 R		     1		DW	DOLST	
+ 0D37  06BE R 006E R 0050		DW      TIB,DOLIT,80,ACCEP,NTIB,STORE
+       0CF7 R 0291 R 0102 R
+ 0D43  019D R 006E R 0000		DW	DROP,DOLIT,0,INN,STORE,EXIT
+       0283 R 0102 R 00F1 R
+				;   ABORT	( -- )
+				;	Reset data stack and jump to QUIT.
+					$COLON	5,'ABORT',ABORT
+ 0D4F  0D2E R		     2		DW      _LINK	    
+ 0D51
+ 0D51  05 41 42 4F 52 54     2		DB	5,'ABORT'	
+ 0D57			     2	ABORT:	
+ 0D57  CD		     1		DB	CALLL
+ 0D58  0081 R		     1		DW	DOLST	
+ 0D5A  0DFE R 0E14 R			DW      PRESE,QUIT
+
+				;   abort"	( f -- )
+				;	Run time routine of ABORT" . Abort with a message.
+					$COLON  COMPO+6,'abort"',ABORQ
+ 0D5E  0D51 R		     2		DW      _LINK	    
+ 0D60
+ 0D60  46 61 62 6F 72 74     2		DB	COMPO+6,'abort"'	
+       22
+ 0D67			     2	ABORQ:	
+ 0D67  CD		     1		DB	CALLL
+ 0D68  0081 R		     1		DW	DOLST	
+ 0D6A  00C2 R 0D80 R			DW      QBRAN,ABOR2	     ;text flag
+ 0D6E  09D7 R				DW      DOSTR
+ 0D70				ABOR1:
+ 0D70  0970 R 0688 R 09A0 R		  DW      SPACE,COUNT,TYPES
+ 0D76  006E R 003F 0051 R		DW      DOLIT,'?',EMIT,CR,ABORT  ;pass error string
+       09C0 R 0D57 R
+ 0D80				ABOR2:
+ 0D80  09D7 R 019D R 00F1 R		  DW      DOSTR,DROP,EXIT	 ;drop error
+				;; The text interpreter
+				;   $INTERPRET	( a -- )
+				;	Interpret a word. If failed, try to convert it to an integer.
+					$COLON  10,'$INTERPRET',INTER
+ 0D86  0D60 R		     2		DW      _LINK	    
+ 0D88
+ 0D88  0A 24 49 4E 54 45     2		DB	10,'$INTERPRET'	
+       52 50 52 45 54
+ 0D93			     2	INTER:	
+ 0D93  CD		     1		DB	CALLL
+ 0D94  0081 R		     1		DW	DOLST	
+ 0D96  0C70 R 02E6 R			DW	NAMEQ,QDUP	;?defined
+ 0D9A  00C2 R 0DBA R			DW	QBRAN,INTE1
+ 0D9E  010E R 006E R 0040		DW	AT,DOLIT,COMPO,ANDD	;?compile only lexicon bits
+       01E5 R
+ 0DA6  0D67 R				DW	ABORQ
+ 0DA8  0D 20 63 6F 6D 70		DB	13,' compile only'
+       69 6C 65 20 6F 6E
+       6C 79
+ 0DB6  00E8 R 00F1 R			DW	EXECU,EXIT	;execute defined word
+ 0DBA				INTE1:
+ 0DBA  08A0 R				  DW      NUMBQ	    ;convert a number
+ 0DBC  00C2 R 0D70 R			DW      QBRAN,ABOR1
+ 0DC0  00F1 R				DW	EXIT
+				;   [	( -- )
+				;	Start the text interpreter.
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 36 - 1
+
+
+					$COLON	IMEDD+1,'[',LBRAC
+ 0DC2  0D88 R		     2		DW      _LINK	    
+ 0DC4
+ 0DC4  81 5B		     2		DB	IMEDD+1,'['	
+ 0DC6			     2	LBRAC:	
+ 0DC6  CD		     1		DB	CALLL
+ 0DC7  0081 R		     1		DW	DOLST	
+ 0DC9  006E R 0D93 R 02A0 R		DW	DOLIT,INTER,TEVAL,STORE,EXIT
+       0102 R 00F1 R
+				;   EVAL	( -- )
+				;	Interpret the input stream.
+					$COLON	4,'EVAL',EVAL
+ 0DD3  0DC4 R		     2		DW      _LINK	    
+ 0DD5
+ 0DD5  04 45 56 41 4C	     2		DB	4,'EVAL'	
+ 0DDA			     2	EVAL:	
+ 0DDA  CD		     1		DB	CALLL
+ 0DDB  0081 R		     1		DW	DOLST	
+ 0DDD				EVAL1:
+ 0DDD  0B95 R 01A7 R 0126 R		DW	TOKEN,DUPP,CAT	;?input stream empty
+ 0DE3  00C2 R 0DEF R			DW	QBRAN,EVAL2
+ 0DE7  02A0 R 06D2 R			DW	TEVAL,ATEXE	;evaluate input, check stack
+ 0DEB  00D6 R 0DDD R			DW	BRAN,EVAL1
+ 0DEF				EVAL2:
+ 0DEF  019D R 11C1 R 00F1 R		  DW      DROP,DOTS,EXIT   ;prompt
+				;   PRESET	( -- )
+				;	Reset data stack pointer and the terminal input buffer.
+					$COLON  6,'PRESET',PRESE
+ 0DF5  0DD5 R		     2		DW      _LINK	    
+ 0DF7
+ 0DF7  06 50 52 45 53 45     2		DB	6,'PRESET'	
+       54
+ 0DFE			     2	PRESE:	
+ 0DFE  CD		     1		DB	CALLL
+ 0DFF  0081 R		     1		DW	DOLST	
+ 0E01  006E R 1F90 0291 R		DW	DOLIT,TIBB,NTIB,CELLP,STORE,EXIT
+       05AC R 0102 R 00F1 R
+				;   QUIT	( -- )
+				;	Reset return stack pointer and start text interpreter.
+					$COLON	4,'QUIT',QUIT
+ 0E0D  0DF7 R		     2		DW      _LINK	    
+ 0E0F
+ 0E0F  04 51 55 49 54	     2		DB	4,'QUIT'	
+ 0E14			     2	QUIT:	
+ 0E14  CD		     1		DB	CALLL
+ 0E15  0081 R		     1		DW	DOLST	
+ 0E17  006E R 1F80 0176 R		DW      DOLIT,RPP,RPSTO	  ;reset return stack pointer
+ 0E1D				QUIT1:
+ 0E1D  0DC6 R				DW	LBRAC	;start interpretation
+ 0E1F				QUIT2:
+ 0E1F  0D34 R				DW	QUERY	;get input
+ 0E21  0DDA R				DW      EVAL
+ 0E23  00D6 R 0E1F R			DW      BRAN,QUIT2	     ;continue till error
+				;; The compiler
+				;   '	( -- ca )
+				;	Search context vocabularies for the next word in input stream.
+					$COLON	1,"'",TICK
+ 0E27  0E0F R		     2		DW      _LINK	    
+ 0E29
+ 0E29  01 27		     2		DB	1,"'"	
+ 0E2B			     2	TICK:	
+ 0E2B  CD		     1		DB	CALLL
+ 0E2C  0081 R		     1		DW	DOLST	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 37 - 1
+
+
+ 0E2E  0B95 R 0C70 R			DW	TOKEN,NAMEQ	;?defined
+ 0E32  00C2 R 0D70 R			DW      QBRAN,ABOR1
+ 0E36  00F1 R				DW	EXIT	;yes, push code address
+				;   ALLOT	( n -- )
+				;	Allocate n bytes to the code dictionary.
+					$COLON	5,'ALLOT',ALLOT
+ 0E38  0E29 R		     2		DW      _LINK	    
+ 0E3A
+ 0E3A  05 41 4C 4C 4F 54     2		DB	5,'ALLOT'	
+ 0E40			     2	ALLOT:	
+ 0E40  CD		     1		DB	CALLL
+ 0E41  0081 R		     1		DW	DOLST	
+ 0E43  02CA R 0647 R 00F1 R		DW	CP,PSTOR,EXIT	;adjust code pointer
+				;   ,	( w -- )
+				;	Compile an integer into the code dictionary.
+					$COLON	1,',',COMMA
+ 0E49  0E3A R		     2		DW      _LINK	    
+ 0E4B
+ 0E4B  01 2C		     2		DB	1,','	
+ 0E4D			     2	COMMA:	
+ 0E4D  CD		     1		DB	CALLL
+ 0E4E  0081 R		     1		DW	DOLST	
+ 0E50  069C R 01A7 R 05AC R		DW	HERE,DUPP,CELLP	;advance 1 cell 
+ 0E56  02CA R 0102 R 0102 R		DW	CP,STORE,STORE,EXIT	;adjust code pointer and compile
+       00F1 R
+				;   C,	( b -- )
+				;	Compile a byte into the code dictionary.
+					$COLON	2,'C,',CCOMMA
+ 0E5E  0E4B R		     2		DW      _LINK	    
+ 0E60
+ 0E60  02 43 2C		     2		DB	2,'C,'	
+ 0E63			     2	CCOMMA:	
+ 0E63  CD		     1		DB	CALLL
+ 0E64  0081 R		     1		DW	DOLST	
+ 0E66  069C R 01A7 R 05E2 R		DW	HERE,DUPP,ONEP	; advance 1 byte
+ 0E6C  02CA R 0102 R 011B R		DW	CP,STORE,CSTOR,EXIT	;adjust code pointer and compile
+       00F1 R
+				;   [COMPILE]	( -- ; <string> )
+				;	Compile the next immediate word into code dictionary.
+					$COLON	IMEDD+9,'[COMPILE]',BCOMP
+ 0E74  0E60 R		     2		DW      _LINK	    
+ 0E76
+ 0E76  89 5B 43 4F 4D 50     2		DB	IMEDD+9,'[COMPILE]'	
+       49 4C 45 5D
+ 0E80			     2	BCOMP:	
+ 0E80  CD		     1		DB	CALLL
+ 0E81  0081 R		     1		DW	DOLST	
+ 0E83  0E2B R 0E4D R 00F1 R		DW	TICK,COMMA,EXIT
+				;   COMPILE	( -- )
+				;	Compile the next address in colon list to code dictionary.
+					$COLON	COMPO+7,'COMPILE',COMPI
+ 0E89  0E76 R		     2		DW      _LINK	    
+ 0E8B
+ 0E8B  47 43 4F 4D 50 49     2		DB	COMPO+7,'COMPILE'	
+       4C 45
+ 0E93			     2	COMPI:	
+ 0E93  CD		     1		DB	CALLL
+ 0E94  0081 R		     1		DW	DOLST	
+ 0E96  0133 R 01A7 R 010E R		DW	RFROM,DUPP,AT,COMMA	;compile address
+       0E4D R
+ 0E9E  05AC R 0155 R 00F1 R		DW	CELLP,TOR,EXIT	;adjust return address
+				;   LITERAL	( w -- )
+				;	Compile tos to code dictionary as an integer literal.
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 38 - 1
+
+
+					$COLON	IMEDD+7,'LITERAL',LITER
+ 0EA4  0E8B R		     2		DW      _LINK	    
+ 0EA6
+ 0EA6  87 4C 49 54 45 52     2		DB	IMEDD+7,'LITERAL'	
+       41 4C
+ 0EAE			     2	LITER:	
+ 0EAE  CD		     1		DB	CALLL
+ 0EAF  0081 R		     1		DW	DOLST	
+ 0EB1  0E93 R 006E R 0E4D R		DW	COMPI,DOLIT,COMMA,EXIT
+       00F1 R
+				;   $,"	( -- )
+				;	Compile a literal string up to next " .
+					$COLON  3,'$,"',STRCQ
+ 0EB9  0EA6 R		     2		DW      _LINK	    
+ 0EBB
+ 0EBB  03 24 2C 22	     2		DB	3,'$,"'	
+ 0EBF			     2	STRCQ:	
+ 0EBF  CD		     1		DB	CALLL
+ 0EC0  0081 R		     1		DW	DOLST	
+ 0EC2  006E R 0022 0B24 R		DW      DOLIT,'"',PARSE,HERE,PACKS   ;string to code dictionary
+       069C R 0747 R
+ 0ECC  0688 R 032B R			DW      COUNT,PLUS	;calculate aligned end of string
+ 0ED0  02CA R 0102 R 00F1 R		DW	CP,STORE,EXIT	;adjust the code pointer
+				;; Structures
+				;   FOR	( -- a )
+				;	Start a FOR-NEXT loop structure in a colon definition.
+					$COLON	IMEDD+3,'FOR',FORR
+ 0ED6  0EBB R		     2		DW      _LINK	    
+ 0ED8
+ 0ED8  83 46 4F 52	     2		DB	IMEDD+3,'FOR'	
+ 0EDC			     2	FORR:	
+ 0EDC  CD		     1		DB	CALLL
+ 0EDD  0081 R		     1		DW	DOLST	
+ 0EDF  0E93 R 0155 R 069C R		DW	COMPI,TOR,HERE,EXIT
+       00F1 R
+				;   BEGIN	( -- a )
+				;	Start an infinite or indefinite loop structure.
+					$COLON	IMEDD+5,'BEGIN',BEGIN
+ 0EE7  0ED8 R		     2		DW      _LINK	    
+ 0EE9
+ 0EE9  85 42 45 47 49 4E     2		DB	IMEDD+5,'BEGIN'	
+ 0EEF			     2	BEGIN:	
+ 0EEF  CD		     1		DB	CALLL
+ 0EF0  0081 R		     1		DW	DOLST	
+ 0EF2  069C R 00F1 R			DW	HERE,EXIT
+				;   NEXT	( a -- )
+				;	Terminate a FOR-NEXT loop structure.
+					$COLON	IMEDD+4,'NEXT',NEXT
+ 0EF6  0EE9 R		     2		DW      _LINK	    
+ 0EF8
+ 0EF8  84 4E 45 58 54	     2		DB	IMEDD+4,'NEXT'	
+ 0EFD			     2	NEXT:	
+ 0EFD  CD		     1		DB	CALLL
+ 0EFE  0081 R		     1		DW	DOLST	
+ 0F00  0E93 R 0096 R 0E4D R		DW	COMPI,DONXT,COMMA,EXIT
+       00F1 R
+				;   UNTIL	( a -- )
+				;	Terminate a BEGIN-UNTIL indefinite loop structure.
+					$COLON	IMEDD+5,'UNTIL',UNTIL
+ 0F08  0EF8 R		     2		DW      _LINK	    
+ 0F0A
+ 0F0A  85 55 4E 54 49 4C     2		DB	IMEDD+5,'UNTIL'	
+ 0F10			     2	UNTIL:	
+ 0F10  CD		     1		DB	CALLL
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 39 - 1
+
+
+ 0F11  0081 R		     1		DW	DOLST	
+ 0F13  0E93 R 00C2 R 0E4D R		DW	COMPI,QBRAN,COMMA,EXIT
+       00F1 R
+				;   AGAIN	( a -- )
+				;	Terminate a BEGIN-AGAIN infinite loop structure.
+					$COLON	IMEDD+5,'AGAIN',AGAIN
+ 0F1B  0F0A R		     2		DW      _LINK	    
+ 0F1D
+ 0F1D  85 41 47 41 49 4E     2		DB	IMEDD+5,'AGAIN'	
+ 0F23			     2	AGAIN:	
+ 0F23  CD		     1		DB	CALLL
+ 0F24  0081 R		     1		DW	DOLST	
+ 0F26  0E93 R 00D6 R 0E4D R		DW	COMPI,BRAN,COMMA,EXIT
+       00F1 R
+				;   IF	( -- A )
+				;	Begin a conditional branch structure.
+					$COLON	IMEDD+2,'IF',IFF
+ 0F2E  0F1D R		     2		DW      _LINK	    
+ 0F30
+ 0F30  82 49 46		     2		DB	IMEDD+2,'IF'	
+ 0F33			     2	IFF:	
+ 0F33  CD		     1		DB	CALLL
+ 0F34  0081 R		     1		DW	DOLST	
+ 0F36  0E93 R 00C2 R 069C R		DW	COMPI,QBRAN,HERE
+ 0F3C  006E R 0000 0E4D R		DW	DOLIT,0,COMMA,EXIT
+       00F1 R
+				;   AHEAD	( -- A )
+				;	Compile a forward branch instruction.
+					$COLON	IMEDD+5,'AHEAD',AHEAD
+ 0F44  0F30 R		     2		DW      _LINK	    
+ 0F46
+ 0F46  85 41 48 45 41 44     2		DB	IMEDD+5,'AHEAD'	
+ 0F4C			     2	AHEAD:	
+ 0F4C  CD		     1		DB	CALLL
+ 0F4D  0081 R		     1		DW	DOLST	
+ 0F4F  0E93 R 00D6 R 069C R		DW	COMPI,BRAN,HERE,DOLIT,0,COMMA,EXIT
+       006E R 0000 0E4D R
+       00F1 R
+				;   REPEAT	( A a -- )
+				;	Terminate a BEGIN-WHILE-REPEAT indefinite loop.
+					$COLON	IMEDD+6,'REPEAT',REPEA
+ 0F5D  0F46 R		     2		DW      _LINK	    
+ 0F5F
+ 0F5F  86 52 45 50 45 41     2		DB	IMEDD+6,'REPEAT'	
+       54
+ 0F66			     2	REPEA:	
+ 0F66  CD		     1		DB	CALLL
+ 0F67  0081 R		     1		DW	DOLST	
+ 0F69  0F23 R 069C R 01B4 R		DW	AGAIN,HERE,SWAP,STORE,EXIT
+       0102 R 00F1 R
+				;   THEN	( A -- )
+				;	Terminate a conditional branch structure.
+					$COLON	IMEDD+4,'THEN',THENN
+ 0F73  0F5F R		     2		DW      _LINK	    
+ 0F75
+ 0F75  84 54 48 45 4E	     2		DB	IMEDD+4,'THEN'	
+ 0F7A			     2	THENN:	
+ 0F7A  CD		     1		DB	CALLL
+ 0F7B  0081 R		     1		DW	DOLST	
+ 0F7D  069C R 01B4 R 0102 R		DW	HERE,SWAP,STORE,EXIT
+       00F1 R
+				;   AFT	( a -- a A )
+				;	Jump to THEN in a FOR-AFT-THEN-NEXT loop the first time through.
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 40 - 1
+
+
+					$COLON	IMEDD+3,'AFT',AFT
+ 0F85  0F75 R		     2		DW      _LINK	    
+ 0F87
+ 0F87  83 41 46 54	     2		DB	IMEDD+3,'AFT'	
+ 0F8B			     2	AFT:	
+ 0F8B  CD		     1		DB	CALLL
+ 0F8C  0081 R		     1		DW	DOLST	
+ 0F8E  019D R 0F4C R 0EEF R		DW	DROP,AHEAD,BEGIN,SWAP,EXIT
+       01B4 R 00F1 R
+				;   ELSE	( A -- A )
+				;	Start the false clause in an IF-ELSE-THEN structure.
+					$COLON	IMEDD+4,'ELSE',ELSEE
+ 0F98  0F87 R		     2		DW      _LINK	    
+ 0F9A
+ 0F9A  84 45 4C 53 45	     2		DB	IMEDD+4,'ELSE'	
+ 0F9F			     2	ELSEE:	
+ 0F9F  CD		     1		DB	CALLL
+ 0FA0  0081 R		     1		DW	DOLST	
+ 0FA2  0F4C R 01B4 R 0F7A R		DW	AHEAD,SWAP,THENN,EXIT
+       00F1 R
+				;   WHILE	( a -- A a )
+				;	Conditional branch out of a BEGIN-WHILE-REPEAT loop.
+					$COLON	IMEDD+5,'WHILE',WHILEE
+ 0FAA  0F9A R		     2		DW      _LINK	    
+ 0FAC
+ 0FAC  85 57 48 49 4C 45     2		DB	IMEDD+5,'WHILE'	
+ 0FB2			     2	WHILEE:	
+ 0FB2  CD		     1		DB	CALLL
+ 0FB3  0081 R		     1		DW	DOLST	
+ 0FB5  0F33 R 01B4 R 00F1 R		DW	IFF,SWAP,EXIT
+				;   ABORT"	( -- ; <string> )
+				;	Conditional abort with an error message.
+					$COLON	IMEDD+6,'ABORT"',ABRTQ
+ 0FBB  0FAC R		     2		DW      _LINK	    
+ 0FBD
+ 0FBD  86 41 42 4F 52 54     2		DB	IMEDD+6,'ABORT"'	
+       22
+ 0FC4			     2	ABRTQ:	
+ 0FC4  CD		     1		DB	CALLL
+ 0FC5  0081 R		     1		DW	DOLST	
+ 0FC7  0E93 R 0D67 R 0EBF R		DW	COMPI,ABORQ,STRCQ,EXIT
+       00F1 R
+				;   $"	( -- ; <string> )
+				;	Compile an inline string literal.
+					$COLON	IMEDD+2,'$"',STRQ
+ 0FCF  0FBD R		     2		DW      _LINK	    
+ 0FD1
+ 0FD1  82 24 22		     2		DB	IMEDD+2,'$"'	
+ 0FD4			     2	STRQ:	
+ 0FD4  CD		     1		DB	CALLL
+ 0FD5  0081 R		     1		DW	DOLST	
+ 0FD7  0E93 R 09F2 R 0EBF R		DW	COMPI,STRQP,STRCQ,EXIT
+       00F1 R
+				;   ."	( -- ; <string> )
+				;	Compile an inline string literal to be typed out at run time.
+					$COLON	IMEDD+2,'."',DOTQ
+ 0FDF  0FD1 R		     2		DW      _LINK	    
+ 0FE1
+ 0FE1  82 2E 22		     2		DB	IMEDD+2,'."'	
+ 0FE4			     2	DOTQ:	
+ 0FE4  CD		     1		DB	CALLL
+ 0FE5  0081 R		     1		DW	DOLST	
+ 0FE7  0E93 R 09FF R 0EBF R		DW	COMPI,DOTQP,STRCQ,EXIT
+       00F1 R
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 41 - 1
+
+
+				;; Name compiler
+				;   ?UNIQUE	( a -- a )
+				;	Display a warning message if the word already exists.
+					$COLON  7,'?UNIQUE',UNIQU
+ 0FEF  0FE1 R		     2		DW      _LINK	    
+ 0FF1
+ 0FF1  07 3F 55 4E 49 51     2		DB	7,'?UNIQUE'	
+       55 45
+ 0FF9			     2	UNIQU:	
+ 0FF9  CD		     1		DB	CALLL
+ 0FFA  0081 R		     1		DW	DOLST	
+ 0FFC  01A7 R 0C70 R			DW	DUPP,NAMEQ	;?name exists
+ 1000  00C2 R 1014 R			DW	QBRAN,UNIQ1
+ 1004  09FF R				DW	DOTQP	;redefinitions are OK
+ 1006  07 20 72 65 44 65		DB	7,' reDef '	;but the user should be warned
+       66 20
+ 100E  01C1 R 0688 R 09A0 R		DW	OVER,COUNT,TYPES	;just in case its not planned
+ 1014				UNIQ1:
+ 1014  019D R 00F1 R			DW	DROP,EXIT
+				;   $,n	( na -- )
+				;	Build a new dictionary name using the string at na.
+					$COLON  3,'$,n',SNAME
+ 1018  0FF1 R		     2		DW      _LINK	    
+ 101A
+ 101A  03 24 2C 6E	     2		DB	3,'$,n'	
+ 101E			     2	SNAME:	
+ 101E  CD		     1		DB	CALLL
+ 101F  0081 R		     1		DW	DOLST	
+ 1021  01A7 R 0126 R			DW	DUPP,CAT	;?null input
+ 1025  00C2 R 1047 R			DW	QBRAN,PNAM1
+ 1029  0FF9 R				DW	UNIQU	;?redefinition
+ 102B  01A7 R 0688 R 032B R		DW      DUPP,COUNT,PLUS
+ 1031  02CA R 0102 R			DW      CP,STORE
+ 1035  01A7 R 02D8 R 0102 R		DW	DUPP,LAST,STORE	;save na for vocabulary link
+ 103B  05BF R				DW	CELLM	;link address
+ 103D  02BE R 010E R 01B4 R		DW      CNTXT,AT,SWAP
+ 1043  0102 R 00F1 R			DW	STORE,EXIT	;save code pointer
+ 1047				PNAM1:
+ 1047  09F2 R				  DW      STRQP
+ 1049  05 20 6E 61 6D 65		DB	5,' name'	;null input
+ 104F  00D6 R 0D70 R			DW      BRAN,ABOR1
+				;; FORTH compiler
+				;   $COMPILE	( a -- )
+				;	Compile next word to code dictionary as a token or literal.
+					$COLON  8,'$COMPILE',SCOMP
+ 1053  101A R		     2		DW      _LINK	    
+ 1055
+ 1055  08 24 43 4F 4D 50     2		DB	8,'$COMPILE'	
+       49 4C 45
+ 105E			     2	SCOMP:	
+ 105E  CD		     1		DB	CALLL
+ 105F  0081 R		     1		DW	DOLST	
+ 1061  0C70 R 02E6 R			DW	NAMEQ,QDUP	;?defined
+ 1065  00C2 R 107D R			DW	QBRAN,SCOM2
+ 1069  010E R 006E R 0080		DW	AT,DOLIT,IMEDD,ANDD	;?immediate
+       01E5 R
+ 1071  00C2 R 1079 R			DW	QBRAN,SCOM1
+ 1075  00E8 R 00F1 R			DW	EXECU,EXIT	;its immediate, execute
+ 1079				SCOM1:
+ 1079  0E4D R 00F1 R			DW	COMMA,EXIT	;its not immediate, compile
+ 107D				SCOM2:
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 42 - 1
+
+
+ 107D  08A0 R				  DW      NUMBQ	    ;try to convert to number
+ 107F  00C2 R 0D70 R			DW      QBRAN,ABOR1
+ 1083  0EAE R 00F1 R			DW	LITER,EXIT	;compile number as integer
+				;   OVERT	( -- )
+				;	Link a new word into the current vocabulary.
+					$COLON  5,'OVERT',OVERT
+ 1087  1055 R		     2		DW      _LINK	    
+ 1089
+ 1089  05 4F 56 45 52 54     2		DB	5,'OVERT'	
+ 108F			     2	OVERT:	
+ 108F  CD		     1		DB	CALLL
+ 1090  0081 R		     1		DW	DOLST	
+ 1092  02D8 R 010E R 02BE R		DW      LAST,AT,CNTXT,STORE,EXIT
+       0102 R 00F1 R
+				;   ;	( -- )
+				;	Terminate a colon definition.
+					$COLON	IMEDD+COMPO+1,';',SEMIS
+ 109C  1089 R		     2		DW      _LINK	    
+ 109E
+ 109E  C1 3B		     2		DB	IMEDD+COMPO+1,';'	
+ 10A0			     2	SEMIS:	
+ 10A0  CD		     1		DB	CALLL
+ 10A1  0081 R		     1		DW	DOLST	
+ 10A3  0E93 R 00F1 R 0DC6 R		DW	COMPI,EXIT,LBRAC,OVERT,EXIT
+       108F R 00F1 R
+				;   ]	( -- )
+				;	Start compiling the words in the input stream.
+					$COLON	1,']',RBRAC
+ 10AD  109E R		     2		DW      _LINK	    
+ 10AF
+ 10AF  01 5D		     2		DB	1,']'	
+ 10B1			     2	RBRAC:	
+ 10B1  CD		     1		DB	CALLL
+ 10B2  0081 R		     1		DW	DOLST	
+ 10B4  006E R 105E R 02A0 R		DW	DOLIT,SCOMP,TEVAL,STORE,EXIT
+       0102 R 00F1 R
+				;   call,	( ca -- )
+				;	Assemble a call instruction to ca.
+					$COLON  5,'call,',CALLC
+ 10BE  10AF R		     2		DW      _LINK	    
+ 10C0
+ 10C0  05 63 61 6C 6C 2C     2		DB	5,'call,'	
+ 10C6			     2	CALLC:	
+ 10C6  CD		     1		DB	CALLL
+ 10C7  0081 R		     1		DW	DOLST	
+ 10C9  006E R 00CD 0E63 R		DW	DOLIT,CALLL,CCOMMA	;Direct Threaded Code
+ 10CF  0E4D R 00F1 R			DW	COMMA,EXIT	;DTC 8080 absolute call
+				;   :	( -- ; <string> )
+				;	Start a new colon definition using next word as its name.
+					$COLON	1,':',COLON
+ 10D3  10C0 R		     2		DW      _LINK	    
+ 10D5
+ 10D5  01 3A		     2		DB	1,':'	
+ 10D7			     2	COLON:	
+ 10D7  CD		     1		DB	CALLL
+ 10D8  0081 R		     1		DW	DOLST	
+ 10DA  0B95 R 101E R 006E R		DW	TOKEN,SNAME,DOLIT,DOLST
+       0081 R
+ 10E2  10C6 R 10B1 R 00F1 R		DW	CALLC,RBRAC,EXIT
+				;   IMMEDIATE	( -- )
+				;	Make the last compiled word an immediate word.
+					$COLON	9,'IMMEDIATE',IMMED
+ 10E8  10D5 R		     2		DW      _LINK	    
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 43 - 1
+
+
+ 10EA
+ 10EA  09 49 4D 4D 45 44     2		DB	9,'IMMEDIATE'	
+       49 41 54 45
+ 10F4			     2	IMMED:	
+ 10F4  CD		     1		DB	CALLL
+ 10F5  0081 R		     1		DW	DOLST	
+ 10F7  006E R 0080 02D8 R		DW	DOLIT,IMEDD,LAST,AT,AT,ORR
+       010E R 010E R 01F6 R
+ 1103  02D8 R 010E R 0102 R		DW	LAST,AT,STORE,EXIT
+       00F1 R
+				;; Defining words
+				;   CREATE	( -- ; <string> )
+				;	Compile a new array entry without allocating code space.
+					$COLON	6,'CREATE',CREAT
+ 110B  10EA R		     2		DW      _LINK	    
+ 110D
+ 110D  06 43 52 45 41 54     2		DB	6,'CREATE'	
+       45
+ 1114			     2	CREAT:	
+ 1114  CD		     1		DB	CALLL
+ 1115  0081 R		     1		DW	DOLST	
+ 1117  0B95 R 101E R 108F R		DW	TOKEN,SNAME,OVERT
+ 111D  006E R 0081 R 10C6 R		DW	DOLIT,DOLST,CALLC
+ 1123  006E R 0237 R 0E4D R		DW	DOLIT,DOVAR,COMMA,EXIT
+       00F1 R
+				;   VARIABLE	( -- ; <string> )
+				;	Compile a new variable initialized to 0.
+					$COLON	8,'VARIABLE',VARIA
+ 112B  110D R		     2		DW      _LINK	    
+ 112D
+ 112D  08 56 41 52 49 41     2		DB	8,'VARIABLE'	
+       42 4C 45
+ 1136			     2	VARIA:	
+ 1136  CD		     1		DB	CALLL
+ 1137  0081 R		     1		DW	DOLST	
+ 1139  1114 R 006E R 0000		DW	CREAT,DOLIT,0,COMMA,EXIT
+       0E4D R 00F1 R
+				;; Tools
+				;   dm+	( a u -- a )
+				;	Dump u bytes from , leaving a+u on the stack.
+					$COLON  3,'dm+',DUMPP
+ 1143  112D R		     2		DW      _LINK	    
+ 1145
+ 1145  03 64 6D 2B	     2		DB	3,'dm+'	
+ 1149			     2	DUMPP:	
+ 1149  CD		     1		DB	CALLL
+ 114A  0081 R		     1		DW	DOLST	
+ 114C  01C1 R 006E R 0004		DW	OVER,DOLIT,4,UDOTR	;display address
+       0A28 R
+ 1154  0970 R 0155 R			DW	SPACE,TOR	;start count down loop
+ 1158  00D6 R 1168 R			DW	BRAN,PDUM2	;skip first pass
+ 115C				PDUM1:
+ 115C  01A7 R 0126 R 006E R		DW	DUPP,CAT,DOLIT,3,UDOTR	;display numeric data
+       0003 0A28 R
+ 1166  05E2 R				DW      ONEP	    ;increment address
+ 1168				PDUM2:
+ 1168  0096 R 115C R			DW	DONXT,PDUM1	;loop till done
+ 116C  00F1 R				DW	EXIT
+				;   DUMP	( a u -- )
+				;	Dump u bytes from a, in a formatted manner.
+					$COLON	4,'DUMP',DUMP
+ 116E  1145 R		     2		DW      _LINK	    
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 44 - 1
+
+
+ 1170
+ 1170  04 44 55 4D 50	     2		DB	4,'DUMP'	
+ 1175			     2	DUMP:	
+ 1175  CD		     1		DB	CALLL
+ 1176  0081 R		     1		DW	DOLST	
+ 1178  0269 R 010E R 0155 R		DW	BASE,AT,TOR,HEX	;save radix, set hex
+       083A R
+ 1180  006E R 0010 0506 R		DW	DOLIT,16,SLASH	;change count to lines
+ 1186  0155 R				DW	TOR	;start count down loop
+ 1188				DUMP1:
+ 1188  09C0 R 006E R 0010		DW	CR,DOLIT,16,DDUP,DUMPP	;display numeric
+       031E R 1149 R
+ 1192  02F9 R 02F9 R			DW	ROT,ROT
+ 1196  006E R 0002 0982 R		DW	DOLIT,2,SPACS,TYPES	;display printable characters
+       09A0 R
+ 119E  0951 R 033A R			DW	NUFQ,INVER	;user control
+ 11A2  00C2 R 11AE R			DW	QBRAN,DUMP2
+ 11A6  0096 R 1188 R			DW	DONXT,DUMP1	;loop till done
+ 11AA  00D6 R 11B2 R			DW	BRAN,DUMP3
+ 11AE				DUMP2:
+ 11AE  0133 R 019D R			DW	RFROM,DROP	;cleanup loop stack, early exit
+ 11B2				DUMP3:
+ 11B2  019D R 0133 R 0269 R		DW	DROP,RFROM,BASE,STORE	;restore radix
+       0102 R
+ 11BA  00F1 R				DW	EXIT
+				;   .S	( ... -- ... )
+				;	Display the contents of the data stack.
+					$COLON	2,'.S',DOTS
+ 11BC  1170 R		     2		DW      _LINK	    
+ 11BE
+ 11BE  02 2E 53		     2		DB	2,'.S'	
+ 11C1			     2	DOTS:	
+ 11C1  CD		     1		DB	CALLL
+ 11C2  0081 R		     1		DW	DOLST	
+ 11C4  09C0 R 0155 R 0155 R		DW	CR,TOR,TOR,TOR	;stack depth
+       0155 R
+ 11CC  0155 R 01A7 R 0A57 R		DW	TOR,DUPP,DOT	;skip first pass
+ 11D2  0133 R 01A7 R 0A57 R		DW	RFROM,DUPP,DOT	;skip first pass
+ 11D8  0133 R 01A7 R 0A57 R		DW	RFROM,DUPP,DOT	;skip first pass
+ 11DE  0133 R 01A7 R 0A57 R		DW	RFROM,DUPP,DOT	;skip first pass
+ 11E4  0133 R 01A7 R 0A57 R		DW	RFROM,DUPP,DOT	;skip first pass
+ 11EA  09FF R				DW	DOTQP
+ 11EC  05 3C 74 6F 70 20		DB      5,'<top '
+ 11F2  00F1 R				DW	EXIT
+				;   >NAME	( ca -- na | F )
+				;	Convert code address to a name address.
+					$COLON  5,'>NAME',TNAME
+ 11F4  11BE R		     2		DW      _LINK	    
+ 11F6
+ 11F6  05 3E 4E 41 4D 45     2		DB	5,'>NAME'	
+ 11FC			     2	TNAME:	
+ 11FC  CD		     1		DB	CALLL
+ 11FD  0081 R		     1		DW	DOLST	
+ 11FF  02BE R				DW      CNTXT	   ;vocabulary link
+ 1201				TNAM2:
+ 1201  010E R 01A7 R			DW	AT,DUPP	;?last word in a vocabulary
+ 1205  00C2 R 121F R			DW      QBRAN,TNAM4
+ 1209  031E R 0BA6 R 0208 R		DW	DDUP,NAMET,XORR	;compare
+ 120F  00C2 R 1219 R			DW	QBRAN,TNAM3
+ 1213  05BF R				DW	CELLM	;continue with next word
+ 1215  00D6 R 1201 R			DW	BRAN,TNAM2
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 45 - 1
+
+
+ 1219				TNAM3:
+ 1219  01B4 R 019D R 00F1 R		  DW      SWAP,DROP,EXIT
+ 121F				TNAM4:
+ 121F  030E R 006E R 0000		  DW      DDROP,DOLIT,0,EXIT
+       00F1 R
+				;   .ID	( na -- )
+				;	Display the name at address.
+					$COLON  3,'.ID',DOTID
+ 1227  11F6 R		     2		DW      _LINK	    
+ 1229
+ 1229  03 2E 49 44	     2		DB	3,'.ID'	
+ 122D			     2	DOTID:	
+ 122D  CD		     1		DB	CALLL
+ 122E  0081 R		     1		DW	DOLST	
+ 1230  02E6 R				DW	QDUP	;if zero no name
+ 1232  00C2 R 1242 R			DW	QBRAN,DOTI1
+ 1236  0688 R 006E R 001F		DW	COUNT,DOLIT,01FH,ANDD	;mask lexicon bits
+       01E5 R
+ 123E  09A0 R 00F1 R			DW	TYPES,EXIT	;display name string
+ 1242				DOTI1:
+ 1242  09FF R				DW	DOTQP
+ 1244  09 20 7B 6E 6F 4E		DB	9,' {noName}'
+       61 6D 65 7D
+ 124E  00F1 R				DW	EXIT
+				;   SEE	( -- ; <string> )
+				;	       A simple decompiler. Updated for byte machines, 08mar98cht
+					$COLON	3,'SEE',SEE
+ 1250  1229 R		     2		DW      _LINK	    
+ 1252
+ 1252  03 53 45 45	     2		DB	3,'SEE'	
+ 1256			     2	SEE:	
+ 1256  CD		     1		DB	CALLL
+ 1257  0081 R		     1		DW	DOLST	
+ 1259  0E2B R				DW	TICK	;starting address
+ 125B  09C0 R 05AC R			DW      CR,CELLP
+ 125F				SEE1:
+ 125F  05E2 R 01A7 R 010E R		   DW      ONEP,DUPP,AT,DUPP      ;?does it contain a zero
+       01A7 R
+ 1267  00C2 R 126D R			DW	QBRAN,SEE2
+ 126B  11FC R				DW	TNAME	;?is it a name
+ 126D				SEE2:
+ 126D  02E6 R				DW	QDUP	;name address or zero
+ 126F  00C2 R 127D R			DW	QBRAN,SEE3
+ 1273  0970 R 122D R			DW	SPACE,DOTID	;display name
+ 1277  05E2 R				DW      ONEP
+ 1279  00D6 R 1283 R			DW	BRAN,SEE4
+ 127D				SEE3:
+ 127D  01A7 R 0126 R 0A44 R		   DW      DUPP,CAT,UDOT	    ;display number
+ 1283				SEE4:
+ 1283  0951 R				DW	NUFQ	;user control
+ 1285  00C2 R 125F R			DW	QBRAN,SEE1
+ 1289  019D R 00F1 R			DW	DROP,EXIT
+				;   WORDS	( -- )
+				;	Display the names in the context vocabulary.
+					$COLON	5,'WORDS',WORDS
+ 128D  1252 R		     2		DW      _LINK	    
+ 128F
+ 128F  05 57 4F 52 44 53     2		DB	5,'WORDS'	
+ 1295			     2	WORDS:	
+ 1295  CD		     1		DB	CALLL
+ 1296  0081 R		     1		DW	DOLST	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 46 - 1
+
+
+ 1298  09C0 R 02BE R			DW      CR,CNTXT	     ;only in context
+ 129C				WORS1:
+ 129C  010E R 02E6 R			DW	AT,QDUP	;?at end of list
+ 12A0  00C2 R 12B4 R			DW	QBRAN,WORS2
+ 12A4  01A7 R 0970 R 122D R		DW	DUPP,SPACE,DOTID	;display a name
+ 12AA  05BF R 0951 R			DW	CELLM,NUFQ	;user control
+ 12AE  00C2 R 129C R			DW	QBRAN,WORS1
+ 12B2  019D R				DW	DROP
+ 12B4				WORS2:
+ 12B4  00F1 R				DW	EXIT
+				       
+				;; Hardware reset
+				;   hi	( -- )
+				;	Display the sign-on message of eForth.
+					$COLON	2,'hi',HI
+ 12B6  128F R		     2		DW      _LINK	    
+ 12B8
+ 12B8  02 68 69		     2		DB	2,'hi'	
+ 12BB			     2	HI:	
+ 12BB  CD		     1		DB	CALLL
+ 12BC  0081 R		     1		DW	DOLST	
+ 12BE  09C0 R 09FF R			DW      CR,DOTQP	  ;initialize I/O
+ 12C2  0B 65 50 38 30 38		DB      11,'eP8080 v',VER+'0','.',EXT+'0'     ;version
+       30 20 76 32 2E 33
+ 12CE  09C0 R 00F1 R			DW	CR,EXIT
+				;   'BOOT       ( -- a )
+				;	       The application startup vector.
+					$COLON  5,"'BOOT",TBOOT
+ 12D2  12B8 R		     2		DW      _LINK	    
+ 12D4
+ 12D4  05 27 42 4F 4F 54     2		DB	5,"'BOOT"	
+ 12DA			     2	TBOOT:	
+ 12DA  CD		     1		DB	CALLL
+ 12DB  0081 R		     1		DW	DOLST	
+ 12DD  0237 R				DW      DOVAR
+ 12DF  12BB R				DW      HI	      ;application to boot
+				;   COLD	( -- )
+				;	The hilevel cold start sequence.
+					$COLON	4,'COLD',COLD
+ 12E1  12D4 R		     2		DW      _LINK	    
+ 12E3
+ 12E3  04 43 4F 4C 44	     2		DB	4,'COLD'	
+ 12E8			     2	COLD:	
+ 12E8  CD		     1		DB	CALLL
+ 12E9  0081 R		     1		DW	DOLST	
+ 12EB				COLD1:
+ 12EB  006E R 0009 R 006E R		DW      DOLIT,UZERO,DOLIT,UPP
+       1FE0
+ 12F3  006E R 0014 06E9 R		DW      DOLIT,14H,CMOVEE ;initialize user area
+ 12F9  0DFE R				DW	PRESE	;initialize data stack and TIB
+ 12FB  12DA R 06D2 R			DW      TBOOT,ATEXE	     ;application boot
+ 12FF  108F R				DW      OVERT
+ 1301  0E14 R				DW	QUIT	;start interpretation
+ 1303  00D6 R 12EB R			DW	BRAN,COLD1	;just in case
+				;===============================================================
+ = 12E3				LASTN	   =       _LINK	   ;last name address in name dictionary
+ 1307 = 1307			CTOP	    EQU     $	       ;next available memory in code dictionary
+ 1307				MAIN	ENDS
+				END	ORIG
+				;===============================================================
+
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Page 47 - 1
+
+
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 48 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+$CODE  . . . . . . . . . . . . .	Proc
+$COLON . . . . . . . . . . . . .	Proc
+$NEXT  . . . . . . . . . . . . .	Proc
+$USER  . . . . . . . . . . . . .	Proc
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 49 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+MAIN . . . . . . . . . . . . . .	16 Bit	 1307	  Para	  Private 
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 50 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+ABOR1  . . . . . . . . . . . . .	L Near	 0D70	  MAIN	
+ABOR2  . . . . . . . . . . . . .	L Near	 0D80	  MAIN	
+ABORQ  . . . . . . . . . . . . .	L Near	 0D67	  MAIN	
+ABORT  . . . . . . . . . . . . .	L Near	 0D57	  MAIN	
+ABRTQ  . . . . . . . . . . . . .	L Near	 0FC4	  MAIN	
+ABS1 . . . . . . . . . . . . . .	L Near	 0396	  MAIN	
+ABSS . . . . . . . . . . . . . .	L Near	 0389	  MAIN	
+ACCEP  . . . . . . . . . . . . .	L Near	 0CF7	  MAIN	
+ACCP1  . . . . . . . . . . . . .	L Near	 0D00	  MAIN	
+ACCP2  . . . . . . . . . . . . .	L Near	 0D1E	  MAIN	
+ACCP3  . . . . . . . . . . . . .	L Near	 0D20	  MAIN	
+ACCP4  . . . . . . . . . . . . .	L Near	 0D24	  MAIN	
+AFT  . . . . . . . . . . . . . .	L Near	 0F8B	  MAIN	
+AGAIN  . . . . . . . . . . . . .	L Near	 0F23	  MAIN	
+AHEAD  . . . . . . . . . . . . .	L Near	 0F4C	  MAIN	
+ALLOT  . . . . . . . . . . . . .	L Near	 0E40	  MAIN	
+ANDD . . . . . . . . . . . . . .	L Near	 01E5	  MAIN	
+ATEXE  . . . . . . . . . . . . .	L Near	 06D2	  MAIN	
+AT . . . . . . . . . . . . . . .	L Near	 010E	  MAIN	
+BACK1  . . . . . . . . . . . . .	L Near	 0CA3	  MAIN	
+BASEE  . . . . . . . . . . . . .	Number	 0010h	 
+BASE . . . . . . . . . . . . . .	L Near	 0269	  MAIN	
+BCOMP  . . . . . . . . . . . . .	L Near	 0E80	  MAIN	
+BDIGS  . . . . . . . . . . . . .	L Near	 079F	  MAIN	
+BEGIN  . . . . . . . . . . . . .	L Near	 0EEF	  MAIN	
+BKSLA  . . . . . . . . . . . . .	L Near	 0B6C	  MAIN	
+BKSPP  . . . . . . . . . . . . .	Number	 0008h	 
+BKSP . . . . . . . . . . . . . .	L Near	 0C7E	  MAIN	
+BLANK  . . . . . . . . . . . . .	L Near	 0612	  MAIN	
+BRAN . . . . . . . . . . . . . .	L Near	 00D6	  MAIN	
+CALLC  . . . . . . . . . . . . .	L Near	 10C6	  MAIN	
+CALLL  . . . . . . . . . . . . .	Number	 00CDh	 
+CARRY  . . . . . . . . . . . . .	L Near	 0228	  MAIN	
+CAT  . . . . . . . . . . . . . .	L Near	 0126	  MAIN	
+CCOMMA . . . . . . . . . . . . .	L Near	 0E63	  MAIN	
+CELLL  . . . . . . . . . . . . .	Number	 0002h	 
+CELLM  . . . . . . . . . . . . .	L Near	 05BF	  MAIN	
+CELLP  . . . . . . . . . . . . .	L Near	 05AC	  MAIN	
+CELLS  . . . . . . . . . . . . .	L Near	 05D2	  MAIN	
+CHAR1  . . . . . . . . . . . . .	L Near	 0991	  MAIN	
+CHAR2  . . . . . . . . . . . . .	L Near	 0993	  MAIN	
+CMOV1  . . . . . . . . . . . . .	L Near	 06F2	  MAIN	
+CMOV2  . . . . . . . . . . . . .	L Near	 0702	  MAIN	
+CMOVEE . . . . . . . . . . . . .	L Near	 06E9	  MAIN	
+CNTXT  . . . . . . . . . . . . .	L Near	 02BE	  MAIN	
+COLD1  . . . . . . . . . . . . .	L Near	 12EB	  MAIN	
+COLDD  . . . . . . . . . . . . .	Number	 0000h	 
+COLD . . . . . . . . . . . . . .	L Near	 12E8	  MAIN	
+COLON  . . . . . . . . . . . . .	L Near	 10D7	  MAIN	
+COMMA  . . . . . . . . . . . . .	L Near	 0E4D	  MAIN	
+COMPI  . . . . . . . . . . . . .	L Near	 0E93	  MAIN	
+COMPO  . . . . . . . . . . . . .	Number	 0040h	 
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 51 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+COUNT  . . . . . . . . . . . . .	L Near	 0688	  MAIN	
+CP . . . . . . . . . . . . . . .	L Near	 02CA	  MAIN	
+CREAT  . . . . . . . . . . . . .	L Near	 1114	  MAIN	
+CRR  . . . . . . . . . . . . . .	Number	 000Dh	 
+CR . . . . . . . . . . . . . . .	L Near	 09C0	  MAIN	
+CSTOR  . . . . . . . . . . . . .	L Near	 011B	  MAIN	
+CTOP . . . . . . . . . . . . . .	Number	 1307h	 
+DAT  . . . . . . . . . . . . . .	L Near	 0671	  MAIN	
+DDROP  . . . . . . . . . . . . .	L Near	 030E	  MAIN	
+DDUP . . . . . . . . . . . . . .	L Near	 031E	  MAIN	
+DECHILOW . . . . . . . . . . . .	L Near	 00AD	  MAIN	
+DECIM  . . . . . . . . . . . . .	L Near	 0851	  MAIN	
+DECLOW . . . . . . . . . . . . .	L Near	 00AF	  MAIN	
+DGTQ1  . . . . . . . . . . . . .	L Near	 088E	  MAIN	
+DIGIT  . . . . . . . . . . . . .	L Near	 0764	  MAIN	
+DIGS1  . . . . . . . . . . . . .	L Near	 07DD	  MAIN	
+DIGS2  . . . . . . . . . . . . .	L Near	 07E9	  MAIN	
+DIGS . . . . . . . . . . . . . .	L Near	 07DA	  MAIN	
+DIGTQ  . . . . . . . . . . . . .	L Near	 0867	  MAIN	
+DIG  . . . . . . . . . . . . . .	L Near	 07C8	  MAIN	
+DNEGA  . . . . . . . . . . . . .	L Near	 0361	  MAIN	
+DOLIT  . . . . . . . . . . . . .	L Near	 006E	  MAIN	
+DOLST  . . . . . . . . . . . . .	L Near	 0081	  MAIN	
+DONXT  . . . . . . . . . . . . .	L Near	 0096	  MAIN	
+DOSTR  . . . . . . . . . . . . .	L Near	 09D7	  MAIN	
+DOT1 . . . . . . . . . . . . . .	L Near	 0A6C	  MAIN	
+DOTI1  . . . . . . . . . . . . .	L Near	 1242	  MAIN	
+DOTID  . . . . . . . . . . . . .	L Near	 122D	  MAIN	
+DOTPR  . . . . . . . . . . . . .	L Near	 0B4A	  MAIN	
+DOTQP  . . . . . . . . . . . . .	L Near	 09FF	  MAIN	
+DOTQ . . . . . . . . . . . . . .	L Near	 0FE4	  MAIN	
+DOTR . . . . . . . . . . . . . .	L Near	 0A0F	  MAIN	
+DOTS . . . . . . . . . . . . . .	L Near	 11C1	  MAIN	
+DOT  . . . . . . . . . . . . . .	L Near	 0A57	  MAIN	
+DOUSE  . . . . . . . . . . . . .	L Near	 0253	  MAIN	
+DOVAR  . . . . . . . . . . . . .	L Near	 0237	  MAIN	
+DROP . . . . . . . . . . . . . .	L Near	 019D	  MAIN	
+DSTOR  . . . . . . . . . . . . .	L Near	 065D	  MAIN	
+DUMP1  . . . . . . . . . . . . .	L Near	 1188	  MAIN	
+DUMP2  . . . . . . . . . . . . .	L Near	 11AE	  MAIN	
+DUMP3  . . . . . . . . . . . . .	L Near	 11B2	  MAIN	
+DUMPP  . . . . . . . . . . . . .	L Near	 1149	  MAIN	
+DUMP . . . . . . . . . . . . . .	L Near	 1175	  MAIN	
+DUPP . . . . . . . . . . . . . .	L Near	 01A7	  MAIN	
+EDIGS  . . . . . . . . . . . . .	L Near	 0808	  MAIN	
+ELSEE  . . . . . . . . . . . . .	L Near	 0F9F	  MAIN	
+EMIT . . . . . . . . . . . . . .	L Near	 0051	  MAIN	
+EM . . . . . . . . . . . . . . .	Number	 1FFFh	 
+EQU1 . . . . . . . . . . . . . .	L Near	 03AB	  MAIN	
+EQUAL  . . . . . . . . . . . . .	L Near	 039C	  MAIN	
+ERASE  . . . . . . . . . . . . .	L Near	 0734	  MAIN	
+ERR  . . . . . . . . . . . . . .	Number	 001Bh	 
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 52 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+EVAL1  . . . . . . . . . . . . .	L Near	 0DDD	  MAIN	
+EVAL2  . . . . . . . . . . . . .	L Near	 0DEF	  MAIN	
+EVAL . . . . . . . . . . . . . .	L Near	 0DDA	  MAIN	
+EXE1 . . . . . . . . . . . . . .	L Near	 06DF	  MAIN	
+EXECU  . . . . . . . . . . . . .	L Near	 00E8	  MAIN	
+EXIT . . . . . . . . . . . . . .	L Near	 00F1	  MAIN	
+EXTRC  . . . . . . . . . . . . .	L Near	 0789	  MAIN	
+EXT  . . . . . . . . . . . . . .	Number	 0003h	 
+FILL1  . . . . . . . . . . . . .	L Near	 071E	  MAIN	
+FILL2  . . . . . . . . . . . . .	L Near	 0724	  MAIN	
+FILL . . . . . . . . . . . . . .	L Near	 0711	  MAIN	
+FIND1  . . . . . . . . . . . . .	L Near	 0C0E	  MAIN	
+FIND2  . . . . . . . . . . . . .	L Near	 0C32	  MAIN	
+FIND3  . . . . . . . . . . . . .	L Near	 0C3A	  MAIN	
+FIND4  . . . . . . . . . . . . .	L Near	 0C4A	  MAIN	
+FIND5  . . . . . . . . . . . . .	L Near	 0C56	  MAIN	
+FIND6  . . . . . . . . . . . . .	L Near	 0C3E	  MAIN	
+FIND . . . . . . . . . . . . . .	L Near	 0BF7	  MAIN	
+FORR . . . . . . . . . . . . . .	L Near	 0EDC	  MAIN	
+HERE . . . . . . . . . . . . . .	L Near	 069C	  MAIN	
+HEX  . . . . . . . . . . . . . .	L Near	 083A	  MAIN	
+HI . . . . . . . . . . . . . . .	L Near	 12BB	  MAIN	
+HLD  . . . . . . . . . . . . . .	L Near	 02AD	  MAIN	
+HOLD . . . . . . . . . . . . . .	L Near	 07B1	  MAIN	
+IFF  . . . . . . . . . . . . . .	L Near	 0F33	  MAIN	
+IMEDD  . . . . . . . . . . . . .	Number	 0080h	 
+IMMED  . . . . . . . . . . . . .	L Near	 10F4	  MAIN	
+INN  . . . . . . . . . . . . . .	L Near	 0283	  MAIN	
+INTE1  . . . . . . . . . . . . .	L Near	 0DBA	  MAIN	
+INTER  . . . . . . . . . . . . .	L Near	 0D93	  MAIN	
+INVER  . . . . . . . . . . . . .	L Near	 033A	  MAIN	
+KEY1 . . . . . . . . . . . . . .	L Near	 0942	  MAIN	
+KEY  . . . . . . . . . . . . . .	L Near	 093F	  MAIN	
+KTAP1  . . . . . . . . . . . . .	L Near	 0CE0	  MAIN	
+KTAP2  . . . . . . . . . . . . .	L Near	 0CE4	  MAIN	
+KTAP . . . . . . . . . . . . . .	L Near	 0CC1	  MAIN	
+LASTN  . . . . . . . . . . . . .	Number	 12E3h	 
+LAST . . . . . . . . . . . . . .	L Near	 02D8	  MAIN	
+LBRAC  . . . . . . . . . . . . .	L Near	 0DC6	  MAIN	
+LESS1  . . . . . . . . . . . . .	L Near	 03E8	  MAIN	
+LESSZ  . . . . . . . . . . . . .	L Near	 01D9	  MAIN	
+LESS . . . . . . . . . . . . . .	L Near	 03D5	  MAIN	
+LF . . . . . . . . . . . . . . .	Number	 000Ah	 
+LITER  . . . . . . . . . . . . .	L Near	 0EAE	  MAIN	
+MASKK  . . . . . . . . . . . . .	Number	 7F1Fh	 
+MAX1 . . . . . . . . . . . . . .	L Near	 0401	  MAIN	
+MAX  . . . . . . . . . . . . . .	L Near	 03F4	  MAIN	
+MIN1 . . . . . . . . . . . . . .	L Near	 041A	  MAIN	
+MIN  . . . . . . . . . . . . . .	L Near	 040B	  MAIN	
+MMOD1  . . . . . . . . . . . . .	L Near	 04BF	  MAIN	
+MMOD2  . . . . . . . . . . . . .	L Near	 04CD	  MAIN	
+MMOD3  . . . . . . . . . . . . .	L Near	 04DD	  MAIN	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 53 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+MODD . . . . . . . . . . . . . .	L Near	 04F9	  MAIN	
+MSMOD  . . . . . . . . . . . . .	L Near	 04A8	  MAIN	
+MSTA1  . . . . . . . . . . . . .	L Near	 057D	  MAIN	
+MSTAR  . . . . . . . . . . . . .	L Near	 0562	  MAIN	
+NAMEQ  . . . . . . . . . . . . .	L Near	 0C70	  MAIN	
+NAMET  . . . . . . . . . . . . .	L Near	 0BA6	  MAIN	
+NEGAT  . . . . . . . . . . . . .	L Near	 034E	  MAIN	
+NEXT . . . . . . . . . . . . . .	L Near	 0EFD	  MAIN	
+NTIB . . . . . . . . . . . . . .	L Near	 0291	  MAIN	
+NUFQ1  . . . . . . . . . . . . .	L Near	 0966	  MAIN	
+NUFQ . . . . . . . . . . . . . .	L Near	 0951	  MAIN	
+NUMBQ  . . . . . . . . . . . . .	L Near	 08A0	  MAIN	
+NUMQ1  . . . . . . . . . . . . .	L Near	 08C9	  MAIN	
+NUMQ2  . . . . . . . . . . . . .	L Near	 08EB	  MAIN	
+NUMQ3  . . . . . . . . . . . . .	L Near	 0919	  MAIN	
+NUMQ4  . . . . . . . . . . . . .	L Near	 091F	  MAIN	
+NUMQ5  . . . . . . . . . . . . .	L Near	 092B	  MAIN	
+NUMQ6  . . . . . . . . . . . . .	L Near	 092D	  MAIN	
+NextStep . . . . . . . . . . . .	L Near	 0023	  MAIN	
+ONEM . . . . . . . . . . . . . .	L Near	 05F2	  MAIN	
+ONEP . . . . . . . . . . . . . .	L Near	 05E2	  MAIN	
+ORIG . . . . . . . . . . . . . .	L Near	 0000	  MAIN	
+ORR  . . . . . . . . . . . . . .	L Near	 01F6	  MAIN	
+OVERT  . . . . . . . . . . . . .	L Near	 108F	  MAIN	
+OVER . . . . . . . . . . . . . .	L Near	 01C1	  MAIN	
+PACKS  . . . . . . . . . . . . .	L Near	 0747	  MAIN	
+PAD  . . . . . . . . . . . . . .	L Near	 06AB	  MAIN	
+PAREN  . . . . . . . . . . . . .	L Near	 0B5B	  MAIN	
+PARS1  . . . . . . . . . . . . .	L Near	 0AAA	  MAIN	
+PARS2  . . . . . . . . . . . . .	L Near	 0ACC	  MAIN	
+PARS3  . . . . . . . . . . . . .	L Near	 0ACE	  MAIN	
+PARS4  . . . . . . . . . . . . .	L Near	 0AD4	  MAIN	
+PARS5  . . . . . . . . . . . . .	L Near	 0AEC	  MAIN	
+PARS6  . . . . . . . . . . . . .	L Near	 0AFE	  MAIN	
+PARS7  . . . . . . . . . . . . .	L Near	 0B08	  MAIN	
+PARS8  . . . . . . . . . . . . .	L Near	 0B14	  MAIN	
+PARSE  . . . . . . . . . . . . .	L Near	 0B24	  MAIN	
+PARS . . . . . . . . . . . . . .	L Near	 0A89	  MAIN	
+PDUM1  . . . . . . . . . . . . .	L Near	 115C	  MAIN	
+PDUM2  . . . . . . . . . . . . .	L Near	 1168	  MAIN	
+PLUS . . . . . . . . . . . . . .	L Near	 032B	  MAIN	
+PNAM1  . . . . . . . . . . . . .	L Near	 1047	  MAIN	
+PRESE  . . . . . . . . . . . . .	L Near	 0DFE	  MAIN	
+PSTOR  . . . . . . . . . . . . .	L Near	 0647	  MAIN	
+PUSHDE . . . . . . . . . . . . .	L Near	 0021	  MAIN	
+PUSHHL . . . . . . . . . . . . .	L Near	 0022	  MAIN	
+QBRAN  . . . . . . . . . . . . .	L Near	 00C2	  MAIN	
+QDUP1  . . . . . . . . . . . . .	L Near	 02F1	  MAIN	
+QDUP . . . . . . . . . . . . . .	L Near	 02E6	  MAIN	
+QKEY . . . . . . . . . . . . . .	L Near	 0031	  MAIN	
+QUERY  . . . . . . . . . . . . .	L Near	 0D34	  MAIN	
+QUEST  . . . . . . . . . . . . .	L Near	 0A78	  MAIN	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 54 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+QUIT1  . . . . . . . . . . . . .	L Near	 0E1D	  MAIN	
+QUIT2  . . . . . . . . . . . . .	L Near	 0E1F	  MAIN	
+QUIT . . . . . . . . . . . . . .	L Near	 0E14	  MAIN	
+RAT  . . . . . . . . . . . . . .	L Near	 0146	  MAIN	
+RBRAC  . . . . . . . . . . . . .	L Near	 10B1	  MAIN	
+REPEA  . . . . . . . . . . . . .	L Near	 0F66	  MAIN	
+RFROM  . . . . . . . . . . . . .	L Near	 0133	  MAIN	
+ROT  . . . . . . . . . . . . . .	L Near	 02F9	  MAIN	
+RPAT . . . . . . . . . . . . . .	L Near	 0169	  MAIN	
+RPP  . . . . . . . . . . . . . .	Number	 1F80h	 
+RPSTO  . . . . . . . . . . . . .	L Near	 0176	  MAIN	
+RTS  . . . . . . . . . . . . . .	Number	 0080h	 
+RX1  . . . . . . . . . . . . . .	L Near	 0048	  MAIN	
+SAME1  . . . . . . . . . . . . .	L Near	 0BC8	  MAIN	
+SAME2  . . . . . . . . . . . . .	L Near	 0BE6	  MAIN	
+SAMEQ  . . . . . . . . . . . . .	L Near	 0BBD	  MAIN	
+SCOM1  . . . . . . . . . . . . .	L Near	 1079	  MAIN	
+SCOM2  . . . . . . . . . . . . .	L Near	 107D	  MAIN	
+SCOMP  . . . . . . . . . . . . .	L Near	 105E	  MAIN	
+SEE1 . . . . . . . . . . . . . .	L Near	 125F	  MAIN	
+SEE2 . . . . . . . . . . . . . .	L Near	 126D	  MAIN	
+SEE3 . . . . . . . . . . . . . .	L Near	 127D	  MAIN	
+SEE4 . . . . . . . . . . . . . .	L Near	 1283	  MAIN	
+SEE  . . . . . . . . . . . . . .	L Near	 1256	  MAIN	
+SEMIS  . . . . . . . . . . . . .	L Near	 10A0	  MAIN	
+SIGN1  . . . . . . . . . . . . .	L Near	 0801	  MAIN	
+SIGN . . . . . . . . . . . . . .	L Near	 07F2	  MAIN	
+SLASH  . . . . . . . . . . . . .	L Near	 0506	  MAIN	
+SLMOD  . . . . . . . . . . . . .	L Near	 04E6	  MAIN	
+SNAME  . . . . . . . . . . . . .	L Near	 101E	  MAIN	
+SPACE  . . . . . . . . . . . . .	L Near	 0970	  MAIN	
+SPACS  . . . . . . . . . . . . .	L Near	 0982	  MAIN	
+SPAT . . . . . . . . . . . . . .	L Near	 0183	  MAIN	
+SPP  . . . . . . . . . . . . . .	Number	 0000h	 
+SPSTO  . . . . . . . . . . . . .	L Near	 0191	  MAIN	
+SSMOD  . . . . . . . . . . . . .	L Near	 0587	  MAIN	
+STAR . . . . . . . . . . . . . .	L Near	 0554	  MAIN	
+STASL  . . . . . . . . . . . . .	L Near	 0599	  MAIN	
+STORE  . . . . . . . . . . . . .	L Near	 0102	  MAIN	
+STRCQ  . . . . . . . . . . . . .	L Near	 0EBF	  MAIN	
+STRQP  . . . . . . . . . . . . .	L Near	 09F2	  MAIN	
+STRQ . . . . . . . . . . . . . .	L Near	 0FD4	  MAIN	
+STRR . . . . . . . . . . . . . .	L Near	 081F	  MAIN	
+SUBBB  . . . . . . . . . . . . .	L Near	 037A	  MAIN	
+SWAP . . . . . . . . . . . . . .	L Near	 01B4	  MAIN	
+TAP  . . . . . . . . . . . . . .	L Near	 0CAB	  MAIN	
+TBOOT  . . . . . . . . . . . . .	L Near	 12DA	  MAIN	
+TCHA1  . . . . . . . . . . . . .	L Near	 0640	  MAIN	
+TCHAR  . . . . . . . . . . . . .	L Near	 0623	  MAIN	
+TEMP . . . . . . . . . . . . . .	L Near	 0276	  MAIN	
+TEVAL  . . . . . . . . . . . . .	L Near	 02A0	  MAIN	
+THENN  . . . . . . . . . . . . .	L Near	 0F7A	  MAIN	
+Microsoft (R) Macro Assembler Version 6.14.8444		    03/23/16 18:30:36
+80eF202							     Symbols 55 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+TIBB . . . . . . . . . . . . . .	Number	 1F90h	 
+TIB  . . . . . . . . . . . . . .	L Near	 06BE	  MAIN	
+TICK . . . . . . . . . . . . . .	L Near	 0E2B	  MAIN	
+TIC  . . . . . . . . . . . . . .	Number	 0027h	 
+TNAM2  . . . . . . . . . . . . .	L Near	 1201	  MAIN	
+TNAM3  . . . . . . . . . . . . .	L Near	 1219	  MAIN	
+TNAM4  . . . . . . . . . . . . .	L Near	 121F	  MAIN	
+TNAME  . . . . . . . . . . . . .	L Near	 11FC	  MAIN	
+TOKEN  . . . . . . . . . . . . .	L Near	 0B95	  MAIN	
+TOR  . . . . . . . . . . . . . .	L Near	 0155	  MAIN	
+TRUEE  . . . . . . . . . . . . .	Number	 -0001h	  
+TWOSL  . . . . . . . . . . . . .	L Near	 0602	  MAIN	
+TX1  . . . . . . . . . . . . . .	L Near	 0054	  MAIN	
+TYPE1  . . . . . . . . . . . . .	L Near	 09A9	  MAIN	
+TYPE2  . . . . . . . . . . . . .	L Near	 09B3	  MAIN	
+TYPES  . . . . . . . . . . . . .	L Near	 09A0	  MAIN	
+UDOTR  . . . . . . . . . . . . .	L Near	 0A28	  MAIN	
+UDOT . . . . . . . . . . . . . .	L Near	 0A44	  MAIN	
+ULAST  . . . . . . . . . . . . .	L Near	 0021	  MAIN	
+ULES1  . . . . . . . . . . . . .	L Near	 03CB	  MAIN	
+ULESS  . . . . . . . . . . . . .	L Near	 03B6	  MAIN	
+UMM1 . . . . . . . . . . . . . .	L Near	 0454	  MAIN	
+UMM2 . . . . . . . . . . . . . .	L Near	 0486	  MAIN	
+UMM3 . . . . . . . . . . . . . .	L Near	 0488	  MAIN	
+UMM4 . . . . . . . . . . . . . .	L Near	 0494	  MAIN	
+UMMOD  . . . . . . . . . . . . .	L Near	 0441	  MAIN	
+UMST1  . . . . . . . . . . . . .	L Near	 0526	  MAIN	
+UMST2  . . . . . . . . . . . . .	L Near	 0546	  MAIN	
+UMSTA  . . . . . . . . . . . . .	L Near	 0517	  MAIN	
+UNIQ1  . . . . . . . . . . . . .	L Near	 1014	  MAIN	
+UNIQU  . . . . . . . . . . . . .	L Near	 0FF9	  MAIN	
+UNTIL  . . . . . . . . . . . . .	L Near	 0F10	  MAIN	
+UPLUS  . . . . . . . . . . . . .	L Near	 021A	  MAIN	
+UPP  . . . . . . . . . . . . . .	Number	 1FE0h	 
+UP . . . . . . . . . . . . . . .	L Near	 0243	  MAIN	
+US . . . . . . . . . . . . . . .	Number	 001Eh	 
+UZERO  . . . . . . . . . . . . .	L Near	 0009	  MAIN	
+VARIA  . . . . . . . . . . . . .	L Near	 1136	  MAIN	
+VER  . . . . . . . . . . . . . .	Number	 0002h	 
+VOCSS  . . . . . . . . . . . . .	Number	 0008h	 
+WHILEE . . . . . . . . . . . . .	L Near	 0FB2	  MAIN	
+WITHI  . . . . . . . . . . . . .	L Near	 0427	  MAIN	
+WORDD  . . . . . . . . . . . . .	L Near	 0B80	  MAIN	
+WORDS  . . . . . . . . . . . . .	L Near	 1295	  MAIN	
+WORS1  . . . . . . . . . . . . .	L Near	 129C	  MAIN	
+WORS2  . . . . . . . . . . . . .	L Near	 12B4	  MAIN	
+XORR . . . . . . . . . . . . . .	L Near	 0208	  MAIN	
+ZLESS  . . . . . . . . . . . . .	L Near	 01CE	  MAIN	
+_LINK  . . . . . . . . . . . . .	Number	 12E3h	 
+_USER  . . . . . . . . . . . . .	Number	 0014h	 
+
+	   0 Warnings
+Microsoft (R) Macro Assembler Version 6.14.8444 03/23/16 18:30:36
+80eF202							     Symbols 56 - 1
+
+
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+	   0 Errors
